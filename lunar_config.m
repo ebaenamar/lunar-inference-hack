@@ -24,6 +24,12 @@ cfg.scienceImgHz       = 0.1;    % science images per second
 cfg.scienceImgMB       = 4;      % [MB] per raw image
 cfg.triageKeep         = 0.05;   % fraction kept after on-Moon triage
 cfg.robotsWorkInDark   = false;  % solar robots hibernate when the site is dark
+cfg.shiftStartUTC      = 13;     % Earth operator shift start [h UTC] (08:00 Houston)
+cfg.shiftHours         = 16;     % two 8-hour shifts; autonomous low-rate work otherwise
+cfg.hazardPerDay       = 2;      % hazard bursts per day (lander plume, dust, new terrain)
+cfg.hazardMin          = 45;     % mean burst duration [min]
+cfg.hazardTriggerMul   = 3;      % detector forwards 3x the frames during a burst
+cfg.seed               = 7;      % random arrivals
 
 % ---------------- Explorers and cognitive tiers ----------------
 cfg.fracExploring  = 0.4;    % robots outside the base cell (crater floors, distant sites)

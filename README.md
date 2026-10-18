@@ -1,7 +1,7 @@
 # Fast Moon, Slow Earth
 **An AI data center fleet across the Moon, its relay constellation and Earth**
 
-*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3.2x cheaper*
+*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3x cheaper*
 
 ## The problem
 By 2035, hundreds of robots will work at the lunar south pole, and they will need AI at very different speeds:
@@ -44,14 +44,14 @@ It produces a 3D animation of the fleet, a robot's-eye video of each thought tra
 | Strategy | Thinking cost per robot-day | Perception / tactical on time | Lunar base peak load |
 |---|---|---|---|
 | All on Earth | ~$0 | **0** / 88 % | 1.0 kW |
-| All on the Moon (Kimi K3 at the base) | ~$293 | 100 / **60** % | 5.7 kW |
-| Moon-first | ~$137 | 100 / 92 % | 3.6 kW |
-| **Fast Moon, Slow Earth** | **~$42** | **100 / 100 %** | **3.1 kW** |
+| All on the Moon (Kimi K3 at the base) | ~$293 | 100 / **60** % | 11.3 kW |
+| Moon-first | ~$137 | 100 / 92 % | 4.5 kW |
+| **Fast Moon, Slow Earth** | **~$45** | **100 / 100 %** | **3.6 kW** |
 
 The coordinated fleet:
-- is **3.2x cheaper** than Moon-first and **7x cheaper** than running everything on the Moon;
-- spends **72 % less energy on the Moon**;
-- draws a **peak of 3.1 kW instead of 5.7 kW**, so the lunar power plant is 46 % smaller and about $27 M cheaper to launch;
+- is **3x cheaper** than Moon-first and **7x cheaper** than running everything on the Moon;
+- spends **70 % less energy on the Moon**;
+- draws a **peak of 3.6 kW instead of 11.3 kW**, because the shift-start planning bursts go to Earth, so the lunar power plant is 68 % smaller and about $80 M cheaper to launch;
 - serves every robot on time, with 94–100 % of deep reasoning answered by the frontier model.
 
 ## How it fits Track 1
@@ -81,29 +81,31 @@ Per robot-day, Connecting Ridge, 100 robots (40 % exploring), first relay only, 
 | Strategy | Thinking cost | Perception / tactical / deep by Kimi K3 | Lunar base peak load |
 |---|---|---|---|
 | All on the robot (Thor each) | ~$970 | 0 / 100 / 0 % | — |
-| All on Earth | ~$0 | **0** / 88 / 94 % | 1.0 kW |
-| All on the Moon (K3 at the base) | ~$293 | 100 / **60** / 0 %* | 5.7 kW |
-| Moon-first (base, relays, then Earth) | ~$137 | 100 / 92 / 94 % | 3.6 kW |
-| **Coordinated** | **~$42** | **100 / 100 / 94 %** | **3.1 kW** |
+| All on Earth | ~$0 | **0** / 88 / 95 % | 1.0 kW |
+| All on the Moon (K3 at the base) | ~$293 | 100 / **60** / 0 %* | 11.3 kW |
+| Moon-first (base, relays, then Earth) | ~$137 | 100 / 92 / 95 % | 4.5 kW |
+| **Coordinated** | **~$45** | **100 / 100 / 95 %** | **3.6 kW** |
 
 \* At the base, Kimi K3 answers but explorers are unserved.
 
-The coordinated policy spends *more* joules than Moon-first, because Earth runs Kimi K3 on the escalations too. It spends 72 % fewer joules on the Moon, which makes it 3.2x cheaper while serving everything on time (3.5x with the full five-relay constellation). The one cost it cannot remove is real-time perception at the base, which stays on the Moon by physics.
+The coordinated policy spends *more* joules than Moon-first, because Earth runs Kimi K3 on the escalations too. It spends 70 % fewer joules on the Moon, which makes it 3x cheaper while serving everything on time (3.3x with the full five-relay constellation). The one cost it cannot remove is real-time perception at the base, which stays on the Moon by physics.
 
 ## Dynamic power
 
 Power is not a constant: every 5-minute step, each data center draws what its current work needs.
 
+- **Workload over time** (`work_profile.m`): robots are supervised from Earth in two 8-hour shifts (from 13:00 UTC). On shift most of them drive, so perception and tactical load are ~2.5x the off-shift level; each shift starts with a burst of deep-reasoning planning requests. About two hazard bursts per day (lander plumes, dust, new terrain) make the on-board detector forward 3x the frames. Request counts are Poisson around these means.
+
 ![power](figures/power_coordinated_1relay.png)
 
 - **Energy per request** (`request_cost.m`): prefill draws 100 % of TDP, memory-bound decode 65 %. The smallest set of GPUs that holds the model is used, so a 7B model takes one B200 and a DGX holds eight replicas.
-- **Deadline-aware batching** (`lunar_dispatch.m`): the base holds requests while the deadline allows and runs them together, choosing the largest batch with fill time plus run time within the slack. Perception batches ~12 frames at ~19 J/frame against 62 J unbatched. The Earth fleet is shared with other tenants and always runs at full batch.
+- **Deadline-aware batching** (`lunar_dispatch.m`): the base holds requests while the deadline allows and runs them together, choosing the largest batch with fill time plus run time within the slack. Perception batches 4 frames off shift, ~15 on shift and up to ~45 in a hazard burst, at 21 J/frame on average against 62 J unbatched. The Earth fleet is shared with other tenants and always runs at full batch.
 - **Lunar base:** house load (1 kW) + compute (work done, plus the GPUs kept warm at 30 % TDP and the rest parked at 5 %) + cooling (8 % of compute in sunlight, 3 % in shadow, when the radiators see a colder sky) + transmitter duty (X-band 67 W, relay Ka 40 W). Solar arrays charge the battery; in the ~2-day shadow the robots park and the battery carries the base until it runs out.
-- **Plant sized to the load:** a first pass measures the peak draw; arrays, battery (4 h) and radiators are then sized to 1.25 × that peak instead of the DGX nameplate. For the coordinated base this is a 5 kW array instead of 21 kW, and the launch mass drops from 1.9 t to 0.5 t.
+- **Plant sized to the load:** a first pass measures the peak draw; arrays, battery (4 h) and radiators are then sized to 1.25 × that peak instead of the DGX nameplate. For the coordinated base this is a ~6 kW array instead of 21 kW, and the launch mass drops from 1.9 t to about 0.5 t.
 - **Relays:** each LCRNS relay has a 300 W bus. The transmitter takes its share while it relays explorer traffic; Thors run on what is left (130 W each), only in sunlight, and are switched on only when work arrives.
 - **Earth** (`earth_sites.m`): three sites (Nordics, West Texas, N. Virginia) with hourly time-of-use prices, a midday solar dip in Texas, PUE that rises in the afternoon heat, and grid carbon. Each step, Earth work goes to the site with the lowest price × PUE.
 
-With the coordinated policy the base averages 2.9 kW, of which most is the idle floor of a DGX B200 that is busy only 2–5 % of the time: the real-time load of 100 robots fits in one GPU. The relays stay parked because the Ka link to Earth has room for every explorer request; under `Hierarchical` they draw ~130 W on average (`figures/power_hierarchical_1relay.png`). Earth energy splits between the Nordics and West Texas as their prices cross during the day.
+With the coordinated policy the base averages 2.9 kW, of which most is the idle floor of a DGX B200 that is busy only 2–10 % of the time: the real-time load of 100 robots fits in one GPU. Peaks come from hazard bursts and from link gaps, when tactical requests fall back to the base. Earth power swings with the shifts and spikes when the store-and-forward backlog drains after a gap. The relays stay parked because the Ka link to Earth has room for every explorer request; under `Hierarchical` they draw ~120 W on average (`figures/power_hierarchical_1relay.png`). Earth energy splits between the Nordics (45 %) and West Texas (55 %) as their prices cross during the day.
 
 ## Run
 

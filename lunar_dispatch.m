@@ -68,6 +68,9 @@ arrayKW = cfg.arrayMargin*PmaxKW; battKWh = cfg.batteryHours*PmaxKW;
 nFission = ceil(PmaxKW/cfg.fissionKWe); isFission = strcmp(cfg.power,'Fission');
 capSec = computeOn*baseH.n*dt;                 % chip-seconds per step
 
+% ---- Workload over time (shifts, bursts, random arrivals)
+Wk = work_profile(cfg, geo); P = Wk.pois;
+
 % ---- State
 nBins = ceil(cfg.deepDeadline/dt);       % deep-reasoning queue, one bin per step of age
 q = zeros(1,nBins);
@@ -78,8 +81,8 @@ ts = struct('perBase',z,'perMiss',z,'perEarth',z, ...
     'relayLoad',zeros(geo.nSat,N),'sciRawMB',z,'sciSentMB',z,'backlogMB',z, ...
     'baseKW',z,'genKW',z,'soc',z,'baseOn',false(1,N),'util',z, ...
     'earthJ',z,'relayJ',z,'baseJ',z,'tacBoard',z,'boardJ',z,'baseReqJ',z,'escal',z, ...
-    'pCompKW',z,'pCoolKW',z,'pTxKW',z,'pHouseKW',z,'batchPer',z,'batchTacE',z,'jPer',z,'jTacE',z, ...
-    'relayW',z,'relayLinkUse',z,'relayBudgetW',z,'earthUSD',z,'earthSite',z,'earthPrice',z,'earthPUE',z,'earthCO2g',z);
+    'pCompKW',z,'pIdleKW',z,'pWorkKW',z,'pCoolKW',z,'pTxKW',z,'pHouseKW',z,'batchPer',z,'batchTacE',z,'jPer',z,'jTacE',z, ...
+    'arrPer',z,'arrTac',z,'arrDeep',z,'shift',z,'hazard',z,'relayW',z,'relayLinkUse',z,'relayBudgetW',z,'earthUSD',z,'earthSite',z,'earthPrice',z,'earthPUE',z,'earthCO2g',z);
 soc = battKWh; backlog = 0;
 
 for i = 1:N
@@ -94,11 +97,11 @@ for i = 1:N
     % deadline-aware dynamic batching: the base holds requests while the deadline
     % allows and runs them together on as few GPUs as possible; the Earth fleet is
     % shared with other tenants and always runs at its nominal batch
-    c = c0; trig = 1; if strcmp(pol,'Coordinated'), trig = cfg.perceptionTrigger; end
-    c.perBase   = pick_batch(Tb.perBase,  Nin*cfg.perceptionHz*trig, cfg.perceptionDeadline - cfg.cellRTT);
-    c.triage    = pick_batch(Tb.perBase,  Nin*cfg.scienceImgHz,      dt);
-    c.tacBase   = pick_batch(Tb.tacBase,  Nin/cfg.tacticalPeriod,    cfg.tacticalDeadline - cfg.cellRTT);
-    c.deepBase  = pick_batch(Tb.deepBase, (Nin+Nout)/cfg.deepPeriod, dt);
+    c = c0; trig = 1; if strcmp(pol,'Coordinated'), trig = min(1, cfg.perceptionTrigger*Wk.trig(i)); end
+    c.perBase   = pick_batch(Tb.perBase,  Nin*cfg.perceptionHz*Wk.per(i)*trig, cfg.perceptionDeadline - cfg.cellRTT);
+    c.triage    = pick_batch(Tb.perBase,  Nin*cfg.scienceImgHz*Wk.sci(i),      dt);
+    c.tacBase   = pick_batch(Tb.tacBase,  Nin/cfg.tacticalPeriod*Wk.tac(i),    cfg.tacticalDeadline - cfg.cellRTT);
+    c.deepBase  = pick_batch(Tb.deepBase, (Nin+Nout)/cfg.deepPeriod*Wk.deep(i), dt);
     okPerBase  = cfg.cellRTT + c.perBase.latency  <= cfg.perceptionDeadline;
     okTacBase  = cfg.cellRTT + c.tacBase.latency  <= cfg.tacticalDeadline;
     okTacEarth = cfg.earthRTT + c.tacEarth.latency <= cfg.tacticalDeadline;
@@ -120,10 +123,10 @@ for i = 1:N
     relSec = sum(nThor(relOK))*dt;                           % replica-seconds the relay power allows
 
     % ---------------- Perception (robots in the cell only)
-    nPer = Nin*cfg.perceptionHz*dt; pB = 0; pE = 0; gate = 0;
+    nPer = P(Nin*cfg.perceptionHz*dt*Wk.per(i)); pB = 0; pE = 0; gate = 0;
     if strcmp(pol,'Coordinated')
         % an on-board detector screens every frame; only frames that change go to the base model
-        gate = nPer*(1 - cfg.perceptionTrigger); nPer = nPer*cfg.perceptionTrigger;
+        gate = nPer*(1 - trig); nPer = nPer*trig;
     end
     if strcmp(pol,'EarthOnly')
         pE = nPer*(okPerEarth && baseMB > 0);
@@ -134,7 +137,7 @@ for i = 1:N
     pB = pB + gate;               % screened frames are answered on board within the deadline
 
     % ---------------- Tactical reasoning
-    tIn = Nin*dt/cfg.tacticalPeriod; tOut = Nout*dt/cfg.tacticalPeriod;
+    tIn = P(Nin*dt/cfg.tacticalPeriod*Wk.tac(i)); tOut = P(Nout*dt/cfg.tacticalPeriod*Wk.tac(i));
     tB = 0; tR = 0; tE = 0; tL = 0; esc = 0;
     if strcmp(pol,'Coordinated')
         % hard requests escalate to Kimi K3 on Earth (store and forward); the robot keeps
@@ -177,7 +180,7 @@ for i = 1:N
     end
 
     % ---------------- Deep reasoning: store-and-forward queue
-    q = [ (Nin+Nout)*dt/cfg.deepPeriod + esc, q(1:end-1) ];  % age by one step; escalations join the queue
+    q = [ P((Nin+Nout)*dt/cfg.deepPeriod*Wk.deep(i)) + esc, q(1:end-1) ];  % age by one step; escalations join the queue
     expired = 0; dE = 0; dB = 0;
     if strcmp(pol,'BaseOnly')
         if baseOn, dB = min(sum(q), free/c.deepBase.gpuSec); free = free - dB*c.deepBase.gpuSec;
@@ -197,7 +200,7 @@ for i = 1:N
     expired = q(end); q(end) = 0;
 
     % ---------------- Science triage and downlink (robots in the cell)
-    nImg = Nin*cfg.scienceImgHz*dt; tri = 0;
+    nImg = P(Nin*cfg.scienceImgHz*dt*Wk.sci(i)); tri = 0;
     if ~strcmp(pol,'EarthOnly') && baseOn
         tri = min(nImg, free/c.triage.gpuSec); free = free - tri*c.triage.gpuSec;
     end
@@ -233,9 +236,10 @@ for i = 1:N
     onThor = min(sum(nThor(relOK)), ceil(busyR/dt));                % Thors powered this step
     ts.relayJ(i) = tR*c.tacRelay.energyJ + relayH.Pidle/relayH.n*max(0,onThor*dt - busyR);
     ts.relayW(i) = ts.relayJ(i)/dt; ts.relayLinkUse(i) = (expCap - expMB)/max(expCap,eps)*(expCap > 0); ts.relayBudgetW(i) = sum(max(0,relW(relOK)));
+    ts.arrPer(i)=nPer+gate; ts.arrTac(i)=tIn+tOut+esc; ts.arrDeep(i)=q(1); ts.shift(i)=Wk.shift(i); ts.hazard(i)=Wk.trig(i)>1;
     ts.tacBoard(i)=tL; ts.escal(i)=esc; ts.boardJ(i)=tL*c.small.energyJ + gate*cfg.detectorJ;
     ts.baseReqJ(i)=busyJ*(1+coolF);
-    ts.pCompKW(i)=pComp; ts.pCoolKW(i)=pCool; ts.pTxKW(i)=pTx; ts.pHouseKW(i)=houseKW;
+    ts.pCompKW(i)=pComp; ts.pIdleKW(i)=baseOn*computeOn*idleW/1000; ts.pWorkKW(i)=baseOn*computeOn*busyJ/dt/1000; ts.pCoolKW(i)=pCool; ts.pTxKW(i)=pTx; ts.pHouseKW(i)=houseKW;
     ts.batchPer(i)=c.perBase.batch; ts.batchTacE(i)=c.tacBase.batch; ts.jPer(i)=c.perBase.energyJ; ts.jTacE(i)=c.tacEarth.energyJ;
     ts.baseJ(i)=loadKW*1e3*dt;
 end

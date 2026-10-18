@@ -1,7 +1,7 @@
 # Fast Moon, Slow Earth
 **An AI data center fleet across the Moon, its relay constellation and Earth**
 
-*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3.2x cheaper*
+*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3x cheaper*
 
 ## The problem
 By 2035, hundreds of robots will work at the lunar south pole, and they will need AI at very different speeds:
@@ -44,14 +44,14 @@ It produces a 3D animation of the fleet, a robot's-eye video of each thought tra
 | Strategy | Thinking cost per robot-day | Perception / tactical on time | Lunar base peak load |
 |---|---|---|---|
 | All on Earth | ~$0 | **0** / 88 % | 1.0 kW |
-| All on the Moon (Kimi K3 at the base) | ~$293 | 100 / **60** % | 5.7 kW |
-| Moon-first | ~$137 | 100 / 92 % | 3.6 kW |
-| **Fast Moon, Slow Earth** | **~$42** | **100 / 100 %** | **3.1 kW** |
+| All on the Moon (Kimi K3 at the base) | ~$293 | 100 / **60** % | 11.3 kW |
+| Moon-first | ~$137 | 100 / 92 % | 4.5 kW |
+| **Fast Moon, Slow Earth** | **~$45** | **100 / 100 %** | **3.6 kW** |
 
 The coordinated fleet:
-- is **3.2x cheaper** than Moon-first and **7x cheaper** than running everything on the Moon;
-- spends **72 % less energy on the Moon**;
-- draws a **peak of 3.1 kW instead of 5.7 kW**, so the lunar power plant is 46 % smaller and about $27 M cheaper to launch;
+- is **3x cheaper** than Moon-first and **7x cheaper** than running everything on the Moon;
+- spends **70 % less energy on the Moon**;
+- draws a **peak of 3.6 kW instead of 11.3 kW**, because the shift-start planning bursts go to Earth, so the lunar power plant is 68 % smaller and about $80 M cheaper to launch;
 - serves every robot on time, with 94–100 % of deep reasoning answered by the frontier model.
 
 ## How it fits Track 1
@@ -60,3 +60,36 @@ The coordinated fleet:
 - **Score:** it is scored the way the track scores, by service at deadline and then dollars.
 
 Our what-if: when the users live on the Moon, the cheapest AI data center is a coordinated fleet where the Moon thinks fast and Earth thinks slow.
+
+---
+
+## 3-minute pitch
+
+**1. Hook (15 s).** "A kilowatt-hour on the Moon costs about $480, because you have to launch the power plant that makes it. On Earth it costs 6 cents. That's 8,000 times more."
+
+**2. Problem (30 s).** "By 2035, hundreds of robots will work at the lunar south pole. They need AI at three speeds: dodge a hazard in a second, re-plan in ten seconds, reason about the mission in an hour. Earth is too far for the first, with a 2.56-second round trip. The Moon is too expensive for the rest."
+
+**3. Insight (30 s).** "So we stopped asking where to put the data center and asked which thought deserves a lunar joule. Only the ones latency forces there." Three data centers act as one fleet: the lunar base for real time, the relay constellation as the backup for explorers, Earth for everything that can wait. Each request goes to the cheapest node that meets its deadline given the live link state.
+
+**4. How we measured it (40 s).** A MATLAB digital twin with:
+- NASA LCRNS relay orbits;
+- terrain shadowing and the lunar day;
+- real link capacities;
+- datasheet hardware;
+- power modelled every 5 minutes: operator shifts, hazard bursts, batching, idle GPUs, cooling, relay power budgets, hourly Earth prices.
+
+Same robots, same work, same orbits for five strategies; only the placement changes. Scored as Track 1 scores: service at deadline first, then dollars, then peak kW, because the peak sets the mass of the power plant you launch.
+
+**5. Results (30 s).** All on Earth is free but misses every real-time deadline. All on the Moon costs ~$293 per robot-day and serves only 60 % of tactical requests on time. Fast Moon, Slow Earth serves 100 % on time for ~$45: 3x cheaper than Moon-first and 6.5x cheaper than all on the Moon, with 70 % less lunar energy and a peak of 3.6 kW instead of 11.3 kW.
+
+**6. The surprise (30 s).** "The lunar DGX is busy only 2 to 10 % of the time: the real-time load of 100 robots fits in one GPU. On the Moon, efficiency isn't about faster chips. It's about not launching idle silicon, and about sending the peaks to Earth." We get there by:
+- batching up to the deadline: 21 J per frame instead of 62 J;
+- parking unused GPUs;
+- sizing the plant to the measured load: a 6 kW array instead of 21 kW.
+
+**7. Close (15 s).** "When your users live on the Moon, the cheapest AI data center isn't one place. It's a fleet: the Moon thinks fast, Earth thinks slow."
+
+### Prepared answers
+- **Where does $480/kWh come from?** The Starship launch price (~$100k/kg) times the kg of power plant per kW, spread over 5 years. Lower launch prices shrink the saving, but the ranking of the strategies holds.
+- **Hardware purchase?** Not costed; only energy is. That is conservative for us, because the coordinated fleet launches less hardware.
+- **Why relays if they rarely compute?** They are the insurance for explorers when the link to Earth fails. Under Moon-first they draw ~120 W on average.
