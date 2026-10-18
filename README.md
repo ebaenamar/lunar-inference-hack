@@ -84,6 +84,8 @@ Our what-if: when the users live on the Moon, the cheapest AI data center is a f
 
 Full pitch script and prepared answers: [PITCH.md](PITCH.md). Every number, with the architecture sweep: [NUMBERS.md](NUMBERS.md). Live power video: `lunar_fleet_power.mp4`.
 
+![strategies](figures/strategies_slide.png)
+
 ![fleet power](figures/fleet_power_frame.png)
 
 ---
