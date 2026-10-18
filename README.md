@@ -161,7 +161,7 @@ Set `cfg.saveVideo = true` to write `lunar_inference.mp4`. The included render s
 
 ## Outputs
 
-- **Live fleet video** (`lunar_fleet_power.mp4`, `lunar_fleet_video.m`), days 20–28 with the first relay (link gaps and the dark spell), 1920×1080, ~38 s:
+- **Live fleet video** (`lunar_fleet_power.mp4`, `lunar_fleet_video.m`), days 0.5–4.5 with the first relay, 1080p, ~90 s, with English captions that pause on each event (shifts, hazard bursts, link losses, Earth site switches), an intro that names the four zones, and a closing card:
   - the real relay orbits seen from the side, Earth's three data centers on top (the one in use lit up, with its price), and the links in use;
   - the base servers filling up, warm or parked, and the robots driving or idle with the shifts;
   - **reasoning available right now** for a robot in the base cell and an explorer in a crater: which models it can reach (reflexes, 3B, 7B, 30B, Kimi K3), which data center answers, and Kimi K3's second opinions in flight, answered and fixing wrong decisions;

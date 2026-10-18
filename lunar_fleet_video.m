@@ -107,18 +107,41 @@ title(a5, sprintf('Energy bill of %d robots since day %g', cfg.nRobots, win(1)))
 
 V = reasoning_panel(fig, V);
 V.i0 = i0;
-if saveVideo
-    vw = VideoWriter('lunar_fleet_power.mp4','MPEG-4'); vw.FrameRate = 30; vw.Quality = 60; open(vw);
+% caption bar along the bottom: shrink every panel to make room
+for ax = findall(fig,'Type','axes')'
+    p = ax.Position; ax.Position = [p(1) 0.075 + 0.925*p(2) p(3) 0.925*p(4)];
 end
+V.cap = annotation(fig,'textbox',[0 0 1 0.068],'String','','BackgroundColor',[0.11 0.13 0.19],'Color','w', ...
+    'FontSize',16,'EdgeColor','none','VerticalAlignment','middle','HorizontalAlignment','left','Margin',14,'FitBoxToText','off');
+fps = 30; pauseF = round(1.3*fps);
+if saveVideo
+    vw = VideoWriter('lunar_fleet_power.mp4','MPEG-4'); vw.FrameRate = fps; vw.Quality = 60; open(vw);
+end
+% ---- intro: what is on screen
+update_frame(V, idx(1), r, rm, geo, cfg, X, Z, ex, d, cB, cM, a3, a4, nSrv, nIn, nOut);
+update_reasoning(V, idx(1), r, Acc);
+G = guide_overlay(fig);
+set(V.cap,'String',sprintf(['What you are watching: %d robots at the lunar south pole served by three data centers (the lunar base, ' ...
+    'the LCRNS relay constellation, Earth), simulated every 5 minutes with real orbits and links.'], cfg.nRobots));
+if saveVideo, write_n(vw, fig, 5*fps); end
+delete(G);
+caption = 'Normal operation: real time stays on the Moon (detector on the robot, 7B at the base); tactical reasoning runs on Earth while the link has room.';
+set(V.cap,'String',caption);
 for i = idx(1):cfg.frameStep:idx(end)
     update_frame(V, i, r, rm, geo, cfg, X, Z, ex, d, cB, cM, a3, a4, nSrv, nIn, nOut);
     update_reasoning(V, i, r, Acc);
+    ev = events_at(i, r, geo, Acc, cfg);
+    if ~isempty(ev), set(V.cap,'String',ev); end
     if saveVideo
-        im = grab_frame(fig); hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);
-        writeVideo(vw, im(1:hh,1:ww,:));
+        write_n(vw, fig, 1 + pauseF*~isempty(ev));        % hold the frame so the caption can be read
     end
 end
-if saveVideo, close(vw); fprintf('Wrote lunar_fleet_power.mp4\n'); end
+% ---- closing card
+w = idx(1):idx(end); ts = r.ts;
+set(V.cap,'String',sprintf(['In %.0f days: %.0f Kimi K3 second opinions, %.0f wrong decisions fixed, every deadline met. ' ...
+    'Energy bill $%s vs $%s with everything on the Moon (%.1fx cheaper).'], d(idx(end)) - d(idx(1)), sum(ts.escK3(w)), ...
+    sum(ts.errFix(w)), commas(cB(idx(end))), commas(cM(idx(end))), cM(idx(end))/max(cB(idx(end)),eps)));
+if saveVideo, write_n(vw, fig, 4*fps); close(vw); fprintf('Wrote lunar_fleet_power.mp4\n'); end
 exportgraphics(fig, fullfile('figures','fleet_power_frame.png'), 'Resolution', 100);
 end
 
@@ -268,4 +291,65 @@ w = V.i0:i;
 set(V.k3, 'String', sprintf(['in flight %3.0f   |   answered %5.0f   |   wrong decisions fixed %4.0f\n' ...
     'robots act on the fast answer now; Kimi K3''s answer arrives later and corrects the plan'], ...
     ts.escQueue(i), sum(ts.escK3(w)), sum(ts.errFix(w))));
+end
+
+function write_n(vw, fig, n)
+im = grab_frame(fig); hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16); im = im(1:hh,1:ww,:);
+for k = 1:n, writeVideo(vw, im); end
+end
+
+function G = guide_overlay(fig)
+% numbered labels over the four zones of the screen
+z = {[0.005 0.42 0.35 0.55], '1  Orbits and links: the real LCRNS relay orbits seen from the side, the Earth data centers on top (lit = in use, with its price), the links in use'
+     [0.01 0.08 0.34 0.32],  '2  Lunar base and robots: the servers fill up, stay warm or park; robots drive (colour) or idle with the operator shifts'
+     [0.36 0.08 0.30 0.89],  '3  Reasoning available right now, for a robot in the base cell and an explorer in a crater: which models it can reach and which data center answers'
+     [0.68 0.08 0.30 0.89],  '4  Power and money: lunar base power vs everything on the Moon, Earth and relay power, and the energy bill so far'};
+G = gobjects(0);
+for k = 1:size(z,1)
+    G(end+1) = annotation(fig,'rectangle',z{k,1},'Color',[0.95 0.45 0.1],'LineWidth',3); %#ok<AGROW>
+    p = z{k,1};
+    G(end+1) = annotation(fig,'textbox',[p(1)+0.01 p(2)+p(4)/2-0.06 p(3)-0.02 0.12],'String',z{k,2}, ...
+        'BackgroundColor',[1 1 1],'FaceAlpha',0.92,'EdgeColor',[0.95 0.45 0.1],'LineWidth',1.5,'FontSize',14,'FontWeight','bold', ...
+        'HorizontalAlignment','center','VerticalAlignment','middle'); %#ok<AGROW>
+end
+end
+
+function txt = events_at(i, r, geo, A, cfg)
+% caption for anything that changes at step i (empty when nothing new happens)
+txt = ''; if i < 2, return; end
+ts = r.ts; h = mod(geo.t(i)/3600, 24);
+act = A.act(i); actP = A.act(i-1);
+if ~act && actP
+    txt = 'The ridge goes into shadow. Robots park; the base keeps its servers on battery until it runs out.'; return; end
+if act && ~actP
+    txt = 'Sunrise on the ridge. Arrays recharge the battery, robots wake up and the base servers come back.'; return; end
+if ts.baseOn(i-1) && ~ts.baseOn(i)
+    txt = 'Battery empty: the base shuts down. With robots parked, only reflexes and the link to Earth remain.'; return; end
+if ~act, return; end
+lb = geo.linkMbps(i) > 0; lbP = geo.linkMbps(i-1) > 0;
+if ~lb && lbP
+    txt = ['The base loses its link to Earth (Earth below the horizon, relay out of view). Tactical decisions for robots ' ...
+           'in the cell fall back to the base servers; second opinions wait in the queue.']; return; end
+if lb && ~lbP
+    txt = sprintf(['Link to Earth restored. The %.0f queued second opinions fly to Kimi K3; Earth power spikes ' ...
+           'while the backlog drains.'], ts.escQueue(i-1)); return; end
+le = A.expl(4,i); leP = A.expl(4,i-1);
+if ~le && leP
+    txt = ['The relay drops out of view of the crater. Explorers lose the 30B model and decide with their own 3B; ' ...
+           'their hard questions wait for the next contact.']; return; end
+if le && ~leP
+    txt = 'The relay is back over the crater: explorers reach the 30B model on Earth again (2.6 s round trip).'; return; end
+if ts.hazard(i) && ~ts.hazard(i-1)
+    txt = sprintf(['Hazard burst near the base (dust, a lander plume). The on-board detector forwards 3x more frames; ' ...
+           'the base batches them (batch %d, %.0f J per frame) and more decisions get a Kimi K3 second opinion.'], ...
+           ts.batchPer(i), ts.jPer(i)); return; end
+if ts.shift(i) > 0.5 && ts.shift(i-1) <= 0.5
+    txt = sprintf(['%02.0f:00 UTC: the operator shift starts. Robots start driving, perception and tactical load rise ' ...
+           'about 2.5x, and a burst of planning requests goes to Kimi K3 on Earth.'], floor(h)); return; end
+if ts.shift(i) <= 0.5 && ts.shift(i-1) > 0.5
+    txt = 'The shift ends. Robots switch to slow autonomous work; load drops and the base parks a server.'; return; end
+if ts.earthJ(i) > 0 && ts.earthSite(i) ~= ts.earthSite(i-1) && ts.earthJ(i-1) > 0
+    S = cfg.earthSites(ts.earthSite(i));
+    txt = sprintf('Earth work moves to %s: the lowest price x PUE this hour ($%.0f/MWh).', S.name, ...
+        1e3*ts.earthPrice(i)*ts.earthPUE(i)); return; end
 end

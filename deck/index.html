@@ -1,0 +1,240 @@
+<title>Fast Moon, Slow Earth</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a 16:9 mission-briefing deck, one slide at a time on wide screens, stacked on phones.
+   Tier colours match the simulation figures: robot orange, lunar base green, relays purple, Earth blue. */
+:root {
+  --bg: #e7eaee;            /* regolith grey, cool */
+  --paper: #f6f7f9;
+  --ink: #16202e;
+  --muted: #5b6676;
+  --rule: #c9cfd8;
+  --accent: #d9622b;        /* launch orange */
+  --robot: #e8962a;
+  --base: #2f9a52;
+  --relay: #8a5fd6;
+  --earth: #3f72d8;
+  --chip-ink: #ffffff;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1520; --paper: #172030; --ink: #e8ecf2; --muted: #9aa6b8; --rule: #2c3a50;
+    --accent: #f08048; --robot: #f0a443; --base: #45b26a; --relay: #a07ff0; --earth: #6693f0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1520; --paper: #172030; --ink: #e8ecf2; --muted: #9aa6b8; --rule: #2c3a50;
+  --accent: #f08048; --robot: #f0a443; --base: #45b26a; --relay: #a07ff0; --earth: #6693f0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px;
+}
+.deck { display: grid; gap: 20px; max-width: 1400px; margin: 0 auto; }
+.slide {
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 6px;
+  padding: clamp(20px, 3.2vw, 48px); display: flex; flex-direction: column; gap: clamp(14px, 1.8vw, 24px);
+  min-width: 0;
+}
+.eyebrow { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1, h2 { font-family: var(--display); font-weight: 700; margin: 0; text-wrap: balance; line-height: 1.02; letter-spacing: 0.005em; }
+h1 { font-size: clamp(2.2rem, 5.2vw, 4.6rem); }
+h2 { font-size: clamp(1.7rem, 3.4vw, 3rem); }
+h3 { font-family: var(--display); font-weight: 600; font-size: 1.35rem; margin: 0; letter-spacing: 0.01em; }
+p { margin: 0; }
+.lede { font-size: clamp(1.05rem, 1.5vw, 1.3rem); color: var(--muted); max-width: 62ch; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* slide 1 */
+.speeds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.speed { border-top: 4px solid var(--rule); padding-top: 10px; display: grid; gap: 4px; min-width: 0; }
+.speed .t { font-family: var(--display); font-size: clamp(2rem, 3.6vw, 3.2rem); font-weight: 700; line-height: 1; }
+.speed.moon { border-color: var(--base); }
+.speed.earth { border-color: var(--earth); }
+.speed .where { font-family: var(--mono); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.speed.moon .where { color: var(--base); }
+.speed.earth .where { color: var(--earth); }
+.gap { display: grid; grid-template-columns: auto auto 1fr; gap: 10px 28px; align-items: end; }
+.gap .big { font-family: var(--display); font-size: clamp(2.6rem, 5vw, 4.4rem); font-weight: 700; line-height: 0.95; }
+.gap .lbl { font-size: 0.9rem; color: var(--muted); }
+.gap .ratio { color: var(--accent); }
+.rule-box { border-left: 5px solid var(--accent); padding: 12px 18px; background: color-mix(in srgb, var(--accent) 8%, var(--paper)); }
+.rule-box p { font-family: var(--display); font-size: clamp(1.35rem, 2.3vw, 2rem); font-weight: 600; line-height: 1.15; }
+
+/* slide 2 */
+.centers { display: grid; grid-template-columns: 0.8fr repeat(3, minmax(0, 1fr)); gap: 12px; }
+.dc { border-radius: 5px; padding: 14px; color: var(--chip-ink); display: grid; gap: 6px; align-content: start; min-width: 0; }
+.dc.robot { background: var(--robot); } .dc.base { background: var(--base); } .dc.relay { background: var(--relay); } .dc.earth { background: var(--earth); }
+.dc .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 0.88rem; }
+.dc .kv span:nth-child(odd) { opacity: 0.85; }
+.dc .kv span:nth-child(even) { font-family: var(--mono); font-weight: 500; }
+.dc .role { font-size: 0.9rem; line-height: 1.3; }
+.layers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.layer { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.layer h3 { border-bottom: 1px solid var(--rule); padding-bottom: 4px; }
+.layer p { font-size: 0.95rem; }
+.layer .m { font-family: var(--mono); font-size: 0.85rem; color: var(--accent); }
+.results { display: flex; flex-wrap: wrap; gap: 10px 30px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.results div { display: grid; }
+.results b { font-family: var(--display); font-size: clamp(1.7rem, 2.6vw, 2.3rem); line-height: 1; }
+.results span { font-size: 0.85rem; color: var(--muted); }
+
+/* slide 3 */
+.vid { display: grid; grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.vid video { width: 100%; max-width: 100%; border-radius: 4px; border: 1px solid var(--rule); background: #000; aspect-ratio: 16 / 9; }
+.zones { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.zones li { display: grid; grid-template-columns: 2rem 1fr; gap: 8px; font-size: 0.93rem; }
+.zones .k { font-family: var(--display); font-weight: 700; font-size: 1.5rem; line-height: 1; color: var(--accent); }
+.zones b { display: block; }
+.events { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 10px; }
+.events ul { margin: 6px 0 0; padding-left: 1.1em; display: grid; gap: 3px; }
+
+/* slides 4-5 */
+.figure img { width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 4px; background: #fff; }
+.figure p { font-size: 0.95rem; color: var(--muted); max-width: 90ch; }
+
+/* navigation: one slide at a time on wide screens */
+.nav { display: none; }
+@media (min-width: 960px) {
+  body { padding-block: 0; display: grid; place-items: center; height: 100%; overflow: hidden; }
+  .deck { display: block; width: min(100%, calc((100vh - 70px) * 16 / 9)); }
+  .slide { aspect-ratio: 16 / 9; overflow: hidden; }
+  .slide:not(.on) { display: none; }
+  .nav { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 10px; font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+  .nav button { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+  .nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+@media (max-width: 700px) {
+  .speeds, .layers { grid-template-columns: 1fr; }
+  .centers { grid-template-columns: 1fr 1fr; }
+  .vid { grid-template-columns: 1fr; }
+  .gap { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: no-preference) { .slide.on { animation: in 220ms ease-out; } @keyframes in { from { opacity: 0.4; } to { opacity: 1; } } }
+</style>
+
+<div class="deck" id="deck">
+
+  <!-- 1. Concept -->
+  <section class="slide on" aria-label="Slide 1">
+    <div class="eyebrow">Sundai Hack 145 · Track 1 · The AI data center of 2035</div>
+    <h1>Fast Moon, Slow Earth</h1>
+    <p class="lede">By 2035, a hundred robots work at the lunar south pole. They need AI at three speeds, and only the fastest one belongs on the Moon.</p>
+    <div class="speeds">
+      <div class="speed moon"><span class="t">1 s</span><span class="where">has to be on the Moon</span><p>See a hazard and react. Earth is 2.56 s away, round trip.</p></div>
+      <div class="speed moon"><span class="t">10 s</span><span class="where">Moon or Earth, depending on the link</span><p>Re-plan the next move with a 30B model.</p></div>
+      <div class="speed earth"><span class="t">1 h</span><span class="where">can wait for Earth</span><p>Reason about the mission with a frontier model (Kimi K3, 2.8T).</p></div>
+    </div>
+    <div class="gap">
+      <div><div class="big num">$480</div><div class="lbl">per kWh on the Moon: you launch the power plant</div></div>
+      <div><div class="big num">$0.06</div><div class="lbl">per kWh on Earth</div></div>
+      <div><div class="big ratio num">8,000×</div><div class="lbl">the price gap every lunar joule has to justify</div></div>
+    </div>
+    <div class="rule-box"><p>Each thought runs on the cheapest data center whose latency meets its deadline, given the live link.</p></div>
+  </section>
+
+  <!-- 2. How it works -->
+  <section class="slide" aria-label="Slide 2">
+    <div class="eyebrow">How it works</div>
+    <h2>Three data centers, one fleet</h2>
+    <div class="centers">
+      <div class="dc robot"><h3>Robot</h3>
+        <div class="kv"><span>latency</span><span>on board</span><span>energy</span><span>$570/kWh</span></div>
+        <p class="role">Reflexes, a frame detector and a 3B model as the last resort.</p></div>
+      <div class="dc base"><h3>Lunar base</h3>
+        <div class="kv"><span>hardware</span><span>3 small GPU servers</span><span>latency</span><span>20 ms</span><span>energy</span><span>$480/kWh</span></div>
+        <p class="role">Real-time vision for robots near the base; takes tactical work when the link to Earth drops.</p></div>
+      <div class="dc relay"><h3>Relay constellation</h3>
+        <div class="kv"><span>hardware</span><span>2 × Jetson Thor per relay</span><span>latency</span><span>120 ms</span><span>energy</span><span>$94/kWh</span></div>
+        <p class="role">NASA LCRNS orbits. Carries explorers' traffic; computes for them when the link to Earth cannot.</p></div>
+      <div class="dc earth"><h3>Earth</h3>
+        <div class="kv"><span>hardware</span><span>2 × DGX B200, Kimi K3</span><span>latency</span><span>2.56 s</span><span>energy</span><span>$0.03–0.12/kWh</span></div>
+        <p class="role">Everything that can wait, at the cheapest of three grid sites each hour.</p></div>
+    </div>
+    <div class="layers">
+      <div class="layer"><h3>Distributed inference</h3><p>One request flows through several nodes: the robot's detector screens every frame, and only the changed ones reach the 7B model at the base.</p><span class="m">77 % of frames never leave the robot</span></div>
+      <div class="layer"><h3>Distributed reasoning</h3><p>The robot acts on a fast answer from the Moon. When it is unsure, Kimi K3 on Earth gives a second opinion and corrects the plan.</p><span class="m">wrong decisions 8.9 % → 4.9 %</span></div>
+      <div class="layer"><h3>Distributed allocation</h3><p>A scheduler sends each request to the cheapest data center that meets its deadline, given the live state of every link.</p><span class="m">88 % of tactical decisions run on Earth</span></div>
+    </div>
+    <div class="results">
+      <div><b class="num">100 %</b><span>of deadlines met</span></div>
+      <div><b class="num">3.9×</b><span>cheaper than all on the Moon</span></div>
+      <div><b class="num">3.3 kW</b><span>lunar peak, vs 11.3 kW</span></div>
+      <div><b class="num">$35 M</b><span>power plant launch, vs $119 M</span></div>
+    </div>
+  </section>
+
+  <!-- 3. Video -->
+  <section class="slide" aria-label="Slide 3">
+    <div class="eyebrow">Digital twin · days 0.5–4.5 · first LCRNS relay · 100 robots</div>
+    <h2>Watch the fleet think</h2>
+    <div class="vid">
+      <video id="film" src="lunar_fleet_power.mp4" poster="poster.jpg" controls preload="metadata" playsinline></video>
+      <div>
+        <ol class="zones">
+          <li><span class="k">1</span><span><b>Orbits and links</b>Real relay orbits, the Earth site in use and its price, the links carrying traffic.</span></li>
+          <li><span class="k">2</span><span><b>Lunar base and robots</b>Servers fill up, stay warm or park; robots drive or idle with the operator shifts.</span></li>
+          <li><span class="k">3</span><span><b>Reasoning available now</b>For a robot near the base and an explorer in a crater: which models it can reach, and who answers.</span></li>
+          <li><span class="k">4</span><span><b>Power and money</b>Base power against putting it all on the Moon, Earth and relay power, the bill so far.</span></li>
+        </ol>
+        <div class="events">The caption bar names each event as it happens, and the film pauses on it:
+          <ul><li>operator shifts start and end</li><li>hazard bursts near the base</li><li>the base or the crater losing its link</li><li>Earth work moving to a cheaper site</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Strategies -->
+  <section class="slide figure" aria-label="Slide 4">
+    <div class="eyebrow">Result · 100 robots · 30 days · same work, orbits and links for every strategy</div>
+    <h2>Better service and a smaller bill</h2>
+    <img src="strategies_slide.png" alt="Where each kind of work runs by latency and energy price, and the cost and service of five strategies">
+  </section>
+
+  <!-- 5. Reasoning by location -->
+  <section class="slide figure" aria-label="Slide 5">
+    <div class="eyebrow">Result · reasoning available by location</div>
+    <h2>Where a robot is decides how much it can think</h2>
+    <img src="reasoning_slide.png" alt="Share of time each level of reasoning is reachable for a robot near the base and an explorer, with one and five relays">
+  </section>
+
+</div>
+<div class="nav" aria-label="Slide navigation">
+  <button type="button" id="prev" aria-label="Previous slide">←</button>
+  <span id="count" class="num">1 / 5</span>
+  <button type="button" id="next" aria-label="Next slide">→</button>
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+    document.getElementById('count').textContent = (i + 1) + ' / ' + slides.length;
+    var v = document.getElementById('film');
+    if (v && !slides[2].classList.contains('on')) { try { v.pause(); } catch (e) {} }
+  }
+  document.getElementById('prev').addEventListener('click', function () { show(i - 1); });
+  document.getElementById('next').addEventListener('click', function () { show(i + 1); });
+  document.addEventListener('keydown', function (e) {
+    if (e.target && e.target.tagName === 'VIDEO' && (e.key === ' ')) return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { show(i + 1); e.preventDefault(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(i - 1); e.preventDefault(); }
+  });
+  var h = (location.hash || '').replace('#', '');
+  if (/^s[1-5]$/.test(h)) show(parseInt(h.slice(1), 10) - 1); else show(0);
+})();
+</script>
