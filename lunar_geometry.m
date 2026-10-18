@@ -20,14 +20,19 @@ EL = [11315.936501 0.691982 59.373229 321.019197 92.494031   0.000000
       11305.413654 0.691982 52.733096  81.148790 92.062891 140.049207
       11326.302154 0.691982 52.513419  81.138818 92.068945 195.992393
       11307.882863 0.691982 56.310396 204.889626 85.444071 164.007607];
-EL   = EL(1:max(1,min(5,cfg.nRelays)),:);   % deployment phase
-nSat = size(EL,1);
+% deployment phase: 1-5 relays of RC 3.1; beyond 5, a denser constellation adds
+% copies of the five orbits phased by a fraction of the period
+nSat = max(1, cfg.nRelays); nCopy = ceil(nSat/5);
+idx  = mod(0:nSat-1, 5) + 1; copyOf = floor((0:nSat-1)/5);
+EL   = EL(idx,:);
+Tper = 2*pi*sqrt(EL(:,1).^3/MU);
+shiftT = copyOf(:).*Tper/(2*nCopy);              % 1/4 period apart for 10 relays, 1/6 for 15
 sat  = zeros(nSat,N,3);
 for k = 1:nSat
     a = EL(k,1); e = EL(k,2); inc = EL(k,3)*d2r; w = EL(k,5)*d2r; nu = EL(k,6)*d2r;
     RA = EL(k,4)*d2r - 1.0*d2r*t/86400;          % node regression (Earth third body)
     E0 = 2*atan(sqrt((1-e)/(1+e))*tan(nu/2)); M0 = E0 - e*sin(E0);
-    n  = sqrt(MU/a^3); M = M0 + n*t; E = M;
+    n  = sqrt(MU/a^3); M = M0 + n*(t + shiftT(k)); E = M;
     for it = 1:30, E = E - (E - e*sin(E) - M)./(1 - e*cos(E)); end
     xo = a*(cos(E)-e); yo = a*sqrt(1-e^2)*sin(E);
     P = [cos(RA)*cos(w)-sin(RA)*sin(w)*cos(inc), sin(RA)*cos(w)+cos(RA)*sin(w)*cos(inc), sin(w)*sin(inc)*ones(N,1)];

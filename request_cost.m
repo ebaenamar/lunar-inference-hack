@@ -16,7 +16,7 @@ P_DECODE  = 0.65;   % fraction of TDP while memory-bound
 
 W    = m.total*m.bpp;                 % weight bytes
 if nargin < 3, B = m.batch; end
-if h.replica == 1, B = 1; end         % a single module (robot, relay, Thor cluster) serves one request at a time
+if ~h.canBatch, B = 1; end            % embedded modules (robot, relay, Thor cluster) serve one request at a time
 B = max(1, round(B));
 % smallest power-of-two set of chips that holds the model and its batch (a 7B
 % model uses one GPU of a DGX, so the node holds eight replicas)

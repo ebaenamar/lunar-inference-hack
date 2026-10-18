@@ -12,12 +12,19 @@ hw.Thor        = mk('Jetson AGX Thor T5000', 1, 128, 273, 517, 130, 0.30, 1.5);
 hw.Board       = mk('Jetson Orin NX 16 GB (on board)', 1, 16, 102, 50, 25, 0.30, 0.5);   % small-rover computer
 hw.Thor_cluster= mk('16 x Jetson AGX Thor',  16, 128, 273, 517, 130, 0.30, 1.5);
 hw.Thor_cluster.replica = 1;   % no NVLink: each module hosts its own replica
+hw.Thor_cluster.canBatch = false;
 hw.DGX_B200    = mk('DGX B200 (8 x B200)',    8, 180, 8000, 4500, 14300/8, 0.30, 142/8);
 hw.DGX_B200x2  = mk('2 x DGX B200 (16 x B200)',16,180, 8000, 4500, 14300/8, 0.30, 142/8);
 hw.GPU2035x2   = mk('2 x 2035 GPU (deck)',    2, 3000, 120000, 18000, 5500, 0.30, 27.5);
 hw.EarthB200   = hw.DGX_B200x2;     % Earth data center that hosts the large planner
 hw.RelayEdge   = mk('Relay edge node (2 x Thor)', 2, 128, 273, 517, 130, 0.30, 1.5);
 hw.RelayEdge.replica = 1;   % each Thor hosts a full replica of the tactical model
+hw.RelayEdge.canBatch = false;
+% Right-sized base: three single-GPU servers (RTX PRO 6000 Blackwell Server Edition:
+% 96 GB GDDR7, 1.6 TB/s, ~1 PFLOPS FP8 dense, 600 W GPU + ~200 W host, ~20 kg each).
+% Each server hosts its own replica and batches; idle servers can be parked.
+hw.RTX3 = mk('3 x RTX PRO 6000 server', 3, 96, 1597, 1000, 800, 0.25, 20);
+hw.RTX3.replica = 1; hw.RTX3.canBatch = true;
 
 C.hw = hw;
 
@@ -40,6 +47,7 @@ h = struct('name',name,'n',n,'memGB',memGB,'bwGBs',bwGBs,'tflops',tflops, ...
            'watts',watts,'idleFrac',idleFrac,'massKg',massKg);
 h.Pmax = n*watts; h.Pidle = idleFrac*h.Pmax; h.mass = n*massKg;
 h.replica = n;   % chips that pool memory for one model replica (NVLink domain)
+h.canBatch = n > 1;   % data-center nodes batch; single embedded modules serve one at a time
 end
 
 function m = mm(name,T,A,bp,tin,tout,kvGB,E,k,dense,batch)

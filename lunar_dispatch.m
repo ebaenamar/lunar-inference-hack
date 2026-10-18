@@ -19,6 +19,7 @@ if cfg.sizeToLoad && ~isfield(cfg,'designKW')
     c1 = cfg; c1.sizeToLoad = false; r0 = lunar_dispatch(c1, geo, C);
     cfg.designKW = cfg.peakMargin*max(r0.ts.baseKW);
 end
+cfg = earth_tier(cfg);
 M = C.mdl; dt = cfg.dt; N = geo.N;
 baseH  = pick_hw(C, cfg.baseHW);
 board  = C.hw.Board; relayH = C.hw.RelayEdge; earthH = C.hw.EarthB200;
@@ -73,7 +74,7 @@ Wk = work_profile(cfg, geo); P = Wk.pois;
 
 % ---- State
 nBins = ceil(cfg.deepDeadline/dt);       % deep-reasoning queue, one bin per step of age
-q = zeros(1,nBins);
+q = zeros(1,nBins); qE = q;              % qE: escalations inside the deep queue
 z = zeros(1,N);
 ts = struct('perBase',z,'perMiss',z,'perEarth',z, ...
     'tacBase',z,'tacRelay',z,'tacEarth',z,'tacMiss',z, ...
@@ -82,7 +83,7 @@ ts = struct('perBase',z,'perMiss',z,'perEarth',z, ...
     'baseKW',z,'genKW',z,'soc',z,'baseOn',false(1,N),'util',z, ...
     'earthJ',z,'relayJ',z,'baseJ',z,'tacBoard',z,'boardJ',z,'baseReqJ',z,'escal',z, ...
     'pCompKW',z,'pIdleKW',z,'pWorkKW',z,'pCoolKW',z,'pTxKW',z,'pHouseKW',z,'batchPer',z,'batchTacE',z,'jPer',z,'jTacE',z, ...
-    'arrPer',z,'arrTac',z,'arrDeep',z,'shift',z,'hazard',z,'relayW',z,'relayLinkUse',z,'relayBudgetW',z,'earthUSD',z,'earthSite',z,'earthPrice',z,'earthPUE',z,'earthCO2g',z);
+    'escSent',z,'escK3',z,'escWait',z,'errFast',z,'errFix',z,'arrPer',z,'arrTac',z,'arrDeep',z,'shift',z,'hazard',z,'relayW',z,'relayLinkUse',z,'relayBudgetW',z,'earthUSD',z,'earthSite',z,'earthPrice',z,'earthPUE',z,'earthCO2g',z);
 soc = battKWh; backlog = 0;
 
 for i = 1:N
@@ -138,12 +139,14 @@ for i = 1:N
 
     % ---------------- Tactical reasoning
     tIn = P(Nin*dt/cfg.tacticalPeriod*Wk.tac(i)); tOut = P(Nout*dt/cfg.tacticalPeriod*Wk.tac(i));
-    tB = 0; tR = 0; tE = 0; tL = 0; esc = 0;
+    tB = 0; tR = 0; tE = 0; tL = 0; esc = 0; escK3 = 0; escDist = 0; escWait = 0;
     if strcmp(pol,'Coordinated')
-        % hard requests escalate to Kimi K3 on Earth (store and forward); the robot keeps
-        % acting on its own small model meanwhile
-        esc = cfg.escalateDeep*(tIn + tOut);
-        tIn = (1-cfg.escalateDeep)*tIn; tOut = (1-cfg.escalateDeep)*tOut;
+        % distributed reasoning: every request gets a fast answer on the Moon; the ones
+        % the fast model is unsure about also go to Kimi K3 on Earth (store and forward)
+        hz = 1 + (cfg.escalateHazardMul - 1)*(Wk.trig(i) > 1);
+        esc = min(1, cfg.escalateBase*hz)*(tIn + min(1/cfg.escalateBase, cfg.escalateExplorerMul)*tOut);
+    elseif strcmp(pol,'Hierarchical')
+        esc = 0;
     end
     switch pol
         case 'EarthOnly'
@@ -180,8 +183,9 @@ for i = 1:N
     end
 
     % ---------------- Deep reasoning: store-and-forward queue
-    q = [ P((Nin+Nout)*dt/cfg.deepPeriod*Wk.deep(i)) + esc, q(1:end-1) ];  % age by one step; escalations join the queue
-    expired = 0; dE = 0; dB = 0;
+    q  = [ P((Nin+Nout)*dt/cfg.deepPeriod*Wk.deep(i)) + esc, q(1:end-1) ];  % age by one step; escalations join the queue
+    qE = [ esc, qE(1:end-1) ];
+    expired = 0; dE = 0; dB = 0; q0 = q;
     if strcmp(pol,'BaseOnly')
         if baseOn, dB = min(sum(q), free/c.deepBase.gpuSec); free = free - dB*c.deepBase.gpuSec;
             q = take_oldest(q, dB); end
@@ -192,12 +196,19 @@ for i = 1:N
         qq = q; qq(latest+1:end) = 0;
         dE = min(sum(qq), sendable); q = take_oldest_upto(q, dE, latest);
         mb = dE*cfg.deepMB; u1 = min(baseMB, mb); baseMB = baseMB - u1; expMB = max(0, expMB - (mb - u1));
+        % escalations answered by Kimi K3 this step, and how long they waited
+        kept = q./max(q0,eps); kept(q0 <= 0) = 1; sE = qE.*(1 - kept); qE = qE - sE; q0 = q;
+        escK3 = sum(sE); escWait = sum(sE.*(0:nBins-1))*dt + escK3*deepCompute;
         if any(strcmp(pol,{'Hierarchical','Coordinated'})) && baseOn   % fallback just before expiry
             last = q(end-1:end); nf = min(sum(last), free/c.deepBase.gpuSec);
             free = free - nf*c.deepBase.gpuSec; dB = nf; q = take_oldest(q, nf);
+            kept = q./max(q0,eps); kept(q0 <= 0) = 1; sB = qE.*(1 - kept); qE = qE - sB; escDist = sum(sB);
         end
     end
-    expired = q(end); q(end) = 0;
+    expired = q(end); q(end) = 0; qE(end) = 0;
+    % decision quality: fast answers, then corrections by the slow reasoner
+    errFast = (tB + tR + tE)*cfg.err30B + tL*cfg.err3B;
+    fix = min(errFast, cfg.escPrecision*(cfg.k3Fix*escK3 + cfg.distFix*escDist));
 
     % ---------------- Science triage and downlink (robots in the cell)
     nImg = P(Nin*cfg.scienceImgHz*dt*Wk.sci(i)); tri = 0;
@@ -237,6 +248,7 @@ for i = 1:N
     ts.relayJ(i) = tR*c.tacRelay.energyJ + relayH.Pidle/relayH.n*max(0,onThor*dt - busyR);
     ts.relayW(i) = ts.relayJ(i)/dt; ts.relayLinkUse(i) = (expCap - expMB)/max(expCap,eps)*(expCap > 0); ts.relayBudgetW(i) = sum(max(0,relW(relOK)));
     ts.arrPer(i)=nPer+gate; ts.arrTac(i)=tIn+tOut+esc; ts.arrDeep(i)=q(1); ts.shift(i)=Wk.shift(i); ts.hazard(i)=Wk.trig(i)>1;
+    ts.escSent(i)=esc; ts.escK3(i)=escK3; ts.escWait(i)=escWait; ts.errFast(i)=errFast; ts.errFix(i)=fix;
     ts.tacBoard(i)=tL; ts.escal(i)=esc; ts.boardJ(i)=tL*c.small.energyJ + gate*cfg.detectorJ;
     ts.baseReqJ(i)=busyJ*(1+coolF);
     ts.pCompKW(i)=pComp; ts.pIdleKW(i)=baseOn*computeOn*idleW/1000; ts.pWorkKW(i)=baseOn*computeOn*busyJ/dt/1000; ts.pCoolKW(i)=pCool; ts.pTxKW(i)=pTx; ts.pHouseKW(i)=houseKW;
@@ -255,7 +267,14 @@ res.tacShare5 = [S(ts.tacBoard) S(ts.tacRelay) S(ts.tacBase) S(ts.tacEarth) S(ts
 res.tierKWh = [S(ts.boardJ) S(ts.relayJ) S(ts.baseReqJ) S(ts.earthJ)]/3.6e6;   % marginal compute energy: robot relay base Earth
 res.sciDelivered = min(1, S(ts.sciSentMB)/max(S(ts.sciRawMB)*(1-(~strcmp(pol,'EarthOnly'))*(1-cfg.triageKeep)),eps));
 res.baseKWh = S(ts.baseJ)/3.6e6; res.earthKWh = S(ts.earthJ)/3.6e6; res.relayKWh = S(ts.relayJ)/3.6e6;
-res.earthUSD = S(ts.earthUSD); res.earthCO2kg = S(ts.earthCO2g)/1e3;
+res.earthUSD = S(ts.earthUSD);
+nDec = S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacBoard);
+res.escRate   = S(ts.escSent)/max(nDec,eps);                 % share of decisions sent to Kimi K3
+res.errFast   = S(ts.errFast)/max(nDec,eps);                 % wrong fast answers
+res.errFinal  = (S(ts.errFast) - S(ts.errFix))/max(nDec,eps);% after the slow reasoner's corrections
+res.fixPerRobotDay = S(ts.errFix)/cfg.nRobots/cfg.days;
+res.corrMin   = S(ts.escWait)/max(S(ts.escK3),eps)/60;      % mean time to the Kimi K3 answer [min]
+res.earthSiteNames = {cfg.earthSites.name}; res.earthCO2kg = S(ts.earthCO2g)/1e3;
 res.baseAvgKW = mean(ts.baseKW); res.baseUptime = mean(ts.baseOn);
 res.baseH = baseH; res.relayH = relayH; res.computeMass = computeOn*baseH.mass;
 res.PmaxKW = PmaxKW; res.nameplateKW = nameKW; res.arrayKW = arrayKW; res.battKWh = battKWh; res.nFission = nFission*isFission;
@@ -265,7 +284,7 @@ end
 
 function T = batch_table(h, m)
 % latency, busy time and energy for batch sizes 1..m.batch
-Bmax = max(1, m.batch); if h.replica == 1, Bmax = 1; end
+Bmax = max(1, m.batch); if ~h.canBatch, Bmax = 1; end
 T.B = 1:Bmax; T.lat = zeros(1,Bmax); T.sec = T.lat; T.J = T.lat; T.g = T.lat; T.fits = true;
 for b = 1:Bmax
     r = request_cost(h, m, b); T.lat(b) = r.latency; T.sec(b) = r.replicaSec; T.J(b) = r.energyJ; T.g(b) = r.gpuSec; T.fits = r.fits;
@@ -303,7 +322,13 @@ switch name
     case 'Thor-cluster', h = C.hw.Thor_cluster;
     case 'DGX-B200',     h = C.hw.DGX_B200;
     case '2xDGX-B200',   h = C.hw.DGX_B200x2;
+    case '3xRTX-PRO',    h = C.hw.RTX3;
     case 'GPU-2035x2',   h = C.hw.GPU2035x2;
-    otherwise, error('Unknown base hardware %s', name);
+    otherwise
+        tk = regexp(name, '^(\d+)xRTX-PRO$', 'tokens', 'once');   % any number of small servers
+        if isempty(tk), error('Unknown base hardware %s', name); end
+        h = C.hw.RTX3; n = str2double(tk{1});
+        h.n = n; h.Pmax = n*h.watts; h.Pidle = h.idleFrac*h.Pmax; h.mass = n*h.massKg;
+        h.name = sprintf('%d x RTX PRO 6000 server', n);
 end
 end

@@ -6,7 +6,7 @@ function cfg = lunar_config()
 cfg.site        = 'ConnectingRidge'; % 'Malapert' | 'ConnectingRidge' | 'FarSide'
 cfg.nRobots     = 100;               % robots operating around the base
 cfg.policy      = 'Coordinated';     % 'EarthOnly' | 'BaseOnly' | 'Hierarchical' | 'Coordinated'
-cfg.baseHW      = 'DGX-B200';        % 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
+cfg.baseHW      = '3xRTX-PRO';       % '3xRTX-PRO' | 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
 cfg.power       = 'RidgeSolar';      % 'RidgeSolar' | 'Fission'
 cfg.launchPrice = 'Starship';        % 'Deck2035' | 'Starship' | 'CLPS'
 
@@ -46,7 +46,18 @@ cfg.relayComputeW  = 300;    % [W] of the relay bus given to compute (2 x Thor)
 % Model cascade (Coordinated policy): small on-board model first, escalate when unsure
 cfg.perceptionTrigger = 0.2; % share of frames the on-board detector sends to the base model
 cfg.detectorJ      = 0.25;   % [J] on-board detector per frame (Orin NX, ~10 ms at 25 W)
-cfg.escalateDeep   = 0.1;    % share of tactical requests that escalate to Kimi K3 on Earth
+cfg.escalateDeep   = 0.1;    % (Hierarchical) share of tactical requests sent to Kimi K3
+% Distributed reasoning (Coordinated): every tactical request gets a fast answer on the
+% Moon; the ones the fast model is unsure about are also sent to Kimi K3 on Earth, whose
+% answer arrives later and corrects the plan if the fast answer was wrong (assumed rates)
+cfg.escalateBase      = 0.07;  % unsure share in known terrain
+cfg.escalateHazardMul = 3;     % more doubt during hazard bursts
+cfg.escalateExplorerMul = 1.5; % more doubt in new terrain (explorers)
+cfg.err30B     = 0.08;   % wrong tactical answers, 30B-A3B
+cfg.err3B      = 0.20;   % wrong tactical answers, on-board 3B
+cfg.escPrecision = 0.5;  % share of escalated answers that were actually wrong
+cfg.k3Fix      = 0.9;    % Kimi K3 fixes this share of the wrong answers it sees
+cfg.distFix    = 0.6;    % distilled 30B fallback at the base
 
 % ---------------- Links (from the tutorial paper) ----------------
 cfg.cellRTT    = 0.02;   % [s] surface 5G cell round trip
@@ -86,6 +97,10 @@ cfg.earthSites = struct( ...
   'pueMin', {1.06, 1.10, 1.08}, 'pueMax', {1.08, 1.18, 1.13}, ... % liquid cooling, night / afternoon
   'gCO2',   {30, 380, 320});                % grid carbon [g/kWh]
 
+cfg.earthTier     = 'Ground';   % 'Ground' (three grid sites) | 'Orbit' (Earth-orbit data centers)
+cfg.leoUSDperKg   = 1200;       % launch to LEO, 2035 (hackathon deck)
+cfg.orbitSolarKgPerKW = 5;      % deck: 5 t/MW of arrays
+cfg.orbitLoadFactor = 0.9;      % dawn-dusk SSO, always sunlit
 cfg.earthPUE      = 1.1;
 cfg.earthUSDperkWh = 0.06;
 

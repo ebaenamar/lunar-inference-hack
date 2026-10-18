@@ -11,7 +11,8 @@ cfg.site        = 'ConnectingRidge';   % 'Malapert' | 'ConnectingRidge' | 'FarSi
 cfg.nRobots     = 100;
 cfg.nRelays     = 5;                   % 1 = first LCRNS relay only, 5 = full constellation
 cfg.policy      = 'Coordinated';       % 'EarthOnly' | 'BaseOnly' | 'Hierarchical' | 'Coordinated'
-cfg.baseHW      = 'DGX-B200';          % 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
+cfg.baseHW      = '3xRTX-PRO';         % '3xRTX-PRO' | 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
+cfg.earthTier   = 'Ground';            % 'Ground' (three grid sites) | 'Orbit' (Earth-orbit data centers)
 cfg.power       = 'RidgeSolar';        % 'RidgeSolar' | 'Fission'
 cfg.launchPrice = 'Starship';          % 'Deck2035' | 'Starship' | 'CLPS'
 cfg.saveVideo   = false;
@@ -38,3 +39,7 @@ if cfg.animate,  lunar_animate(cfg, geo, res); end
 % ---- Coordinated data centers: savings per robot-day and the robot's-eye story
 lunar_savings(cfg, C, true);
 lunar_robot_story(cfg, C, cfg.saveVideo);
+
+% ---- Live view of the fleet's power (lunar_fleet_power.mp4) and every number of the pitch (NUMBERS.md)
+lunar_fleet_video(cfg, C, [4 7], cfg.saveVideo);
+lunar_numbers(cfg, C, 'NUMBERS.md');

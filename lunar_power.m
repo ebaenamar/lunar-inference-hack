@@ -8,6 +8,7 @@ function fig = lunar_power(cfg, geo, res, win)
 %   scheduler picks; the relay power budget; and the Earth site chosen each hour.
 
 if nargin < 4, win = [4 7]; end
+cfg = earth_tier(cfg);
 ts = res.ts; th = geo.t(:)'/3600; d = th/24;
 w = d >= win(1) & d <= win(2);
 fig = figure('Name','Dynamic power of the three data centers','Color','w','Position',[50 30 1550 1000]);

@@ -7,7 +7,9 @@ function L = lunar_savings(cfg, C, doPlot)
 %     MoonFirst    base, then relays, then Earth                  ('Hierarchical')
 %     Coordinated  cheapest node that meets each deadline with the current link,
 %                  on-board detector gating perception, model cascade ('Coordinated')
-%   Cost = marginal compute energy on each tier x that tier's $/kWh (tier_prices).
+%   Cost = the full energy bill of the compute on each tier x that tier's $/kWh
+%   (tier_prices): on the base this includes idle GPUs, cooling and radio, from the
+%   dynamic power model. L.margUSD keeps the marginal (work-only) cost.
 
 if nargin < 3, doPlot = true; end
 P = tier_prices(cfg, C);
@@ -16,13 +18,14 @@ S  = {'AllOnRobot','AllOnEarth','AllOnMoon','MoonFirst','Coordinated'};
 pol = {'', 'EarthOnly', 'BaseOnly', 'Hierarchical', 'Coordinated'};
 hwSel = {'', cfg.baseHW, '2xDGX-B200', cfg.baseHW, cfg.baseHW};
 nS = numel(S);
-USD = zeros(nS,4); kWh = zeros(nS,4); served = zeros(nS,4); peakKW = zeros(nS,1);
+USD = zeros(nS,5); kWh = zeros(nS,5); served = zeros(nS,4); peakKW = zeros(nS,1); margUSD = zeros(nS,1); launchUSD = zeros(nS,1);
 R = cell(nS,1);
 for s = 2:nS
     c = cfg; c.policy = pol{s}; c.baseHW = hwSel{s};
-    r = lunar_dispatch(c, geo, C); R{s} = r;
-    kWh(s,:) = r.tierKWh/cfg.days/cfg.nRobots;               % per robot-day
-    USD(s,:) = kWh(s,:).*P.vec; USD(s,4) = r.earthUSD/cfg.days/cfg.nRobots;   % Earth at hourly site prices
+    r = lunar_dispatch(c, geo, C); R{s} = r; e = lunar_economics(c, r);
+    kWh(s,:) = e.fullKWh/cfg.days/cfg.nRobots;               % per robot-day
+    USD(s,:) = e.fullUSDperDay/cfg.nRobots;                  % Earth at hourly site prices
+    margUSD(s) = e.thinkUSDperDay/cfg.nRobots; launchUSD(s) = e.launchUSD;
     served(s,:) = [r.perOnTime r.tacOnTime r.deepOnTime r.deepOnTime*r.deepSuperior];
     peakKW(s) = max(r.ts.baseKW);                              % measured peak load of the base
 end
@@ -30,22 +33,26 @@ end
 H = C.hw; M = C.mdl; act = mean(geo.sunlit); day = 86400*act;
 cp = request_cost(H.Thor, M.VLM7B); ct = request_cost(H.Thor, M.Tactical); cd = request_cost(H.Thor, M.DeepDist);
 J = day*cfg.perceptionHz*(1-cfg.fracExploring)*cp.energyJ + day/cfg.tacticalPeriod*ct.energyJ + day/cfg.deepPeriod*cd.energyJ;
-kWh(1,:) = [J/3.6e6 0 0 0]; USD(1,:) = kWh(1,:).*P.vec;
+busy = day*cfg.perceptionHz*(1-cfg.fracExploring)*cp.latency + day/cfg.tacticalPeriod*ct.latency + day/cfg.deepPeriod*cd.latency;
+Jidle = H.Thor.Pidle*max(0, day - busy);                     % the Thor idles between requests
+kWh(1,:) = [(J + Jidle)/3.6e6 0 0 0 0]; USD(1,:) = kWh(1,:).*[P.robot 0 0 0 0]; margUSD(1) = J/3.6e6*P.robot;
 served(1,:) = [cp.latency <= cfg.perceptionDeadline, ct.latency <= cfg.tacticalDeadline, 1, 0];
 peakKW(1) = 0;
 plantUSD = peakKW*P.kgPerKW.base*P.usdPerKg;
 L = struct('strategies',{S},'kWh',kWh,'USD',USD,'served',served,'peakKW',peakKW, ...
-           'plantUSD',plantUSD,'price',P.vec,'res',{R});
+           'plantUSD',plantUSD,'price',P.vec,'res',{R},'margUSD',margUSD,'launchUSD',launchUSD, ...
+           'hw',{hwSel});
 if ~doPlot, return; end
 
 % ======================= Figure =======================
-tiers = {'robot','relays','lunar base','Earth'};
-col = [0.95 0.65 0.20; 0.60 0.40 0.90; 0.20 0.62 0.32; 0.30 0.50 0.90];
+tiers = {'robot','relays','lunar base: work','lunar base: idle GPUs, cooling, radio','Earth'};
+col = [0.95 0.65 0.20; 0.60 0.40 0.90; 0.20 0.62 0.32; 0.72 0.86 0.72; 0.30 0.50 0.90];
+colT = col([1 2 3 5],:);
 fig = figure('Name','Coordinated lunar data centers: savings','Color','w','Position',[70 50 1550 880]);
 try, theme(fig,'light'); catch, end
 tl = tiledlayout(fig,2,3,'TileSpacing','compact','Padding','compact');
-title(tl, sprintf(['Models combined across nodes at their timescales: real time stays on the Moon, what can wait goes to Earth  ' ...
-      '(%s, %d robots, %d relays, %s launch)'], geo.siteInfo.name, cfg.nRobots, cfg.nRelays, cfg.launchPrice), 'FontWeight','bold');
+title(tl, sprintf(['Distributed inference, reasoning and allocation across data centers  ' ...
+      '(%s, %d robots, %d relay(s), lunar base %s, %s launch)'], geo.siteInfo.name, cfg.nRobots, cfg.nRelays, cfg.baseHW, cfg.launchPrice), 'FontWeight','bold');
 
 % 1. Timescale x tier map for the coordinated policy
 ax = nexttile(tl,1,[1 2]); hold(ax,'on');
@@ -62,7 +69,7 @@ ek = cell2mat(dots(:,4)); emax = max(ek);
 for k = 1:size(dots,1)
     t = dots{k,1}; y = dots{k,2}; e = dots{k,4};
     if e <= 0, continue; end
-    scatter(ax, t, y, 150 + 3500*sqrt(e/emax), col(y,:), 'filled','MarkerFaceAlpha',0.75,'MarkerEdgeColor','k');
+    scatter(ax, t, y, 150 + 3500*sqrt(e/emax), colT(y,:), 'filled','MarkerFaceAlpha',0.75,'MarkerEdgeColor','k');
     if t >= 1000 || (y == 4 && t < 1000), xt = t/1.8; ha = 'right'; else, xt = t*1.8; ha = 'left'; end
     text(ax, xt, y, sprintf('%s\n%.3f kWh -> $%.2f per robot-day', dots{k,3}, e, e*P.vec(y)), ...
         'FontSize',9,'HorizontalAlignment',ha,'BackgroundColor','w','Margin',1);
@@ -82,22 +89,22 @@ title(ax,'Service delivered');
 
 % 3. Thinking cost per robot-day
 ax = nexttile(tl,4);
-bh = bar(ax, USD, 'stacked'); for k = 1:4, bh(k).FaceColor = col(k,:); end
-set(ax,'XTickLabel',S,'XTickLabelRotation',20); ylabel(ax,'$ per robot-day'); grid(ax,'on');
+bh = bar(ax, USD, 'stacked'); for k = 1:5, bh(k).FaceColor = col(k,:); end
+set(ax,'XTickLabel',S,'XTickLabelRotation',20); ylabel(ax,'$ per robot-day (full energy bill)'); grid(ax,'on');
 tot = sum(USD,2); ylim(ax,[0 1.15*max(tot)]);
 for s = 1:nS, text(ax, s, tot(s)+0.04*max(tot), sprintf('$%.0f', tot(s)), 'HorizontalAlignment','center','FontWeight','bold'); end
 legend(ax,fliplr(bh),fliplr(tiers),'Location','northeast');
-title(ax, sprintf('Thinking cost: coordinated %.1fx cheaper than Moon-first', tot(4)/tot(5)));
+title(ax, sprintf('Energy bill: coordinated %.1fx cheaper than Moon-first, %.1fx than all on the Moon', tot(4)/tot(5), tot(3)/tot(5)));
 
 % 4. Energy per robot-day
 ax = nexttile(tl,5);
-bh = bar(ax, kWh, 'stacked'); for k = 1:4, bh(k).FaceColor = col(k,:); end
+bh = bar(ax, kWh, 'stacked'); for k = 1:5, bh(k).FaceColor = col(k,:); end
 set(ax,'XTickLabel',S,'XTickLabelRotation',20); ylabel(ax,'kWh per robot-day'); grid(ax,'on');
 title(ax,'Energy by tier (Earth joules are ~8,000x cheaper)');
 
 % 5. Moon-side kWh and plant
 ax = nexttile(tl,6);
-moonKWh = sum(kWh(:,1:3),2);
+moonKWh = sum(kWh(:,1:4),2);
 yyaxis(ax,'left'); bar(ax, moonKWh, 0.5, 'FaceColor',[0.5 0.5 0.55]); ylabel(ax,'kWh per robot-day spent on the Moon');
 yyaxis(ax,'right'); plot(ax, 1:nS, peakKW, 'o-','LineWidth',2,'MarkerFaceColor','w'); ylabel(ax,'lunar base peak load, kW');
 set(ax,'XTick',1:nS,'XTickLabel',S,'XTickLabelRotation',20); grid(ax,'on');

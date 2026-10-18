@@ -40,4 +40,11 @@ eco.tierPrice = P.vec;
 eco.tierUSDperDay = res.tierKWh.*P.vec/cfg.days;
 eco.tierUSDperDay(4) = res.earthUSD/cfg.days;
 eco.thinkUSDperDay = sum(eco.tierUSDperDay);
+% Full energy bill of the fleet's compute, from the dynamic power model: the base pays
+% for its idle GPUs, cooling and radio as well as the work (house load excluded)
+baseWorkKWh = res.tierKWh(3);
+baseAllKWh  = sum(res.ts.pCompKW + res.ts.pCoolKW + res.ts.pTxKW)*cfg.dt/3600;
+eco.fullKWh = [res.tierKWh(1) res.tierKWh(2) baseWorkKWh max(0,baseAllKWh-baseWorkKWh) res.tierKWh(4)];
+eco.fullUSDperDay = [eco.fullKWh(1:4).*P.vec([1 2 3 3]) res.earthUSD]/cfg.days;   % robot relay work idle Earth
+eco.billUSDperDay = sum(eco.fullUSDperDay);
 end
