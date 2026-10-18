@@ -60,7 +60,26 @@ cfg.fissionKWe     = 40;    % NASA FSP unit
 cfg.fissionKg      = 6000;  % <6 t per unit (2022 FSP contracts)
 cfg.lifeYears      = 5;
 
+% ---------------- Dynamic power model ----------------
+cfg.sizeToLoad = true;   % size arrays, battery and radiators to the measured peak load
+cfg.peakMargin = 1.25;   % design margin over the measured peak
+cfg.houseKW      = 1.0;    % base avionics, thermal control, cell radio [kW]
+cfg.moonCoolSun  = 0.08;   % cooling overhead (pumps, heaters) with a sunlit radiator sink
+cfg.moonCoolDark = 0.03;   % cooling overhead with a cold sink (shadow)
+cfg.dteTxW       = 67;     % X-band DTE transmitter DC power while sending (20 W RF / 30%)
+cfg.relayTxW     = 40;     % Ka relay transmitter DC power while relaying (10 W RF / 25%)
+cfg.relayBusW    = 300;    % relay bus power available to payload compute + relaying when sunlit
+
 % ---------------- Earth side ----------------
+% Earth data centers: hourly price and PUE follow local time; the scheduler picks the cheapest
+cfg.earthSites = struct( ...
+  'name',   {'Nordics','West Texas','N. Virginia'}, ...
+  'usd',    {0.045, 0.050, 0.080}, ...      % average industrial price [$/kWh]
+  'touAmp', {0.15, 0.40, 0.30}, ...         % time-of-use swing (evening peak; Texas solar midday dip)
+  'utc',    {1, -6, -5}, ...                % UTC offset [h]
+  'pueMin', {1.06, 1.10, 1.08}, 'pueMax', {1.08, 1.18, 1.13}, ... % liquid cooling, night / afternoon
+  'gCO2',   {30, 380, 320});                % grid carbon [g/kWh]
+
 cfg.earthPUE      = 1.1;
 cfg.earthUSDperkWh = 0.06;
 

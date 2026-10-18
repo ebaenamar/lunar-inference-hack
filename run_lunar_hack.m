@@ -31,6 +31,7 @@ fprintf('Base %.1f kW avg | mass %.0f kg | launch $%.1f M (%s) | lunar energy $%
     res.baseAvgKW, eco.mass.total, eco.launchUSD/1e6, cfg.launchPrice, eco.moonUSDperKWh);
 
 lunar_dashboard(cfg, geo, res, eco);
+lunar_power(cfg, geo, res);                 % dynamic power of the three data centers
 if cfg.runSweep, lunar_sweep(cfg, geo, C); end
 if cfg.animate,  lunar_animate(cfg, geo, res); end
 

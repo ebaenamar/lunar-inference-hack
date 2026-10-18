@@ -1,7 +1,7 @@
 # Fast Moon, Slow Earth
 **An AI data center fleet across the Moon, its relay constellation and Earth**
 
-*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3.6x cheaper*
+*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3.2x cheaper*
 
 ## The problem
 By 2035, hundreds of robots will work at the lunar south pole, and they will need AI at very different speeds:
@@ -33,6 +33,7 @@ A MATLAB digital twin with:
 - **real orbits:** the NASA LCRNS Reference Constellation 3.1 states;
 - **real geometry:** terrain shadowing, the lunar day, link capacities and the light-time delay;
 - **datasheet hardware:** per-request latency and energy from memory-bandwidth and FLOPS models;
+- **dynamic power:** every 5 minutes, each data center draws what its work needs: batch size, busy and parked GPUs, cooling, transmitter, relay power budget, and the hourly price of three Earth sites;
 - **costs:** launch-based $/kWh for each lunar data center.
 
 It produces a 3D animation of the fleet, a robot's-eye video of each thought travelling to its data center, and a comparison of five strategies.
@@ -40,17 +41,17 @@ It produces a 3D animation of the fleet, a robot's-eye video of each thought tra
 ## Results
 100 robots, 40 % of them exploring craters, first relay only:
 
-| Strategy | Thinking cost per robot-day | Perception / tactical on time | Lunar base peak |
+| Strategy | Thinking cost per robot-day | Perception / tactical on time | Lunar base peak load |
 |---|---|---|---|
-| All on Earth | ~$0 | **0** / 88 % | 2 kW |
-| All on the Moon (Kimi K3 at the base) | ~$310 | 100 / **60** % | 31 kW |
-| Moon-first | ~$134 | 100 / 92 % | 16 kW |
-| **Fast Moon, Slow Earth** | **~$37** | **100 / 100 %** | **16 kW** |
+| All on Earth | ~$0 | **0** / 88 % | 1.0 kW |
+| All on the Moon (Kimi K3 at the base) | ~$293 | 100 / **60** % | 5.7 kW |
+| Moon-first | ~$137 | 100 / 92 % | 3.6 kW |
+| **Fast Moon, Slow Earth** | **~$42** | **100 / 100 %** | **3.1 kW** |
 
 The coordinated fleet:
-- is **3.6x cheaper** than Moon-first and **8x cheaper** than running everything on the Moon;
-- spends **76 % less energy on the Moon**;
-- needs a **lunar power plant half the size**, which saves about $150 M in launch;
+- is **3.2x cheaper** than Moon-first and **7x cheaper** than running everything on the Moon;
+- spends **72 % less energy on the Moon**;
+- draws a **peak of 3.1 kW instead of 5.7 kW**, so the lunar power plant is 46 % smaller and about $27 M cheaper to launch;
 - serves every robot on time, with 94–100 % of deep reasoning answered by the frontier model.
 
 ## How it fits Track 1
@@ -77,17 +78,32 @@ This is the `Coordinated` policy. `lunar_savings.m` compares it with four other 
 
 Per robot-day, Connecting Ridge, 100 robots (40 % exploring), first relay only, Starship launch price. Cost is marginal compute energy on each tier times that tier's $/kWh.
 
-| Strategy | Thinking cost | Perception / tactical / deep by Kimi K3 | Lunar base peak |
+| Strategy | Thinking cost | Perception / tactical / deep by Kimi K3 | Lunar base peak load |
 |---|---|---|---|
-| All on the robot (Thor each) | ~$1,450 | 0 / 100 / 0 % | — |
-| All on Earth | ~$0 | **0** / 88 / 94 % | 2 kW |
-| All on the Moon (K3 at the base) | ~$310 | 100 / **60** / 0 %* | 31 kW |
-| Moon-first (base, relays, then Earth) | ~$134 | 100 / 92 / 94 % | 16 kW |
-| **Coordinated** | **~$37** | **100 / 100 / 94 %** | 16 kW |
+| All on the robot (Thor each) | ~$970 | 0 / 100 / 0 % | — |
+| All on Earth | ~$0 | **0** / 88 / 94 % | 1.0 kW |
+| All on the Moon (K3 at the base) | ~$293 | 100 / **60** / 0 %* | 5.7 kW |
+| Moon-first (base, relays, then Earth) | ~$137 | 100 / 92 / 94 % | 3.6 kW |
+| **Coordinated** | **~$42** | **100 / 100 / 94 %** | **3.1 kW** |
 
 \* At the base, Kimi K3 answers but explorers are unserved.
 
-The coordinated policy spends *more* joules than Moon-first, because Earth runs Kimi K3 on the escalations too. It spends 76 % fewer joules on the Moon, which makes it 3.6x cheaper while serving everything on time. The one cost it cannot remove is real-time perception at the base, which stays on the Moon by physics.
+The coordinated policy spends *more* joules than Moon-first, because Earth runs Kimi K3 on the escalations too. It spends 72 % fewer joules on the Moon, which makes it 3.2x cheaper while serving everything on time (3.5x with the full five-relay constellation). The one cost it cannot remove is real-time perception at the base, which stays on the Moon by physics.
+
+## Dynamic power
+
+Power is not a constant: every 5-minute step, each data center draws what its current work needs.
+
+![power](figures/power_coordinated_1relay.png)
+
+- **Energy per request** (`request_cost.m`): prefill draws 100 % of TDP, memory-bound decode 65 %. The smallest set of GPUs that holds the model is used, so a 7B model takes one B200 and a DGX holds eight replicas.
+- **Deadline-aware batching** (`lunar_dispatch.m`): the base holds requests while the deadline allows and runs them together, choosing the largest batch with fill time plus run time within the slack. Perception batches ~12 frames at ~19 J/frame against 62 J unbatched. The Earth fleet is shared with other tenants and always runs at full batch.
+- **Lunar base:** house load (1 kW) + compute (work done, plus the GPUs kept warm at 30 % TDP and the rest parked at 5 %) + cooling (8 % of compute in sunlight, 3 % in shadow, when the radiators see a colder sky) + transmitter duty (X-band 67 W, relay Ka 40 W). Solar arrays charge the battery; in the ~2-day shadow the robots park and the battery carries the base until it runs out.
+- **Plant sized to the load:** a first pass measures the peak draw; arrays, battery (4 h) and radiators are then sized to 1.25 × that peak instead of the DGX nameplate. For the coordinated base this is a 5 kW array instead of 21 kW, and the launch mass drops from 1.9 t to 0.5 t.
+- **Relays:** each LCRNS relay has a 300 W bus. The transmitter takes its share while it relays explorer traffic; Thors run on what is left (130 W each), only in sunlight, and are switched on only when work arrives.
+- **Earth** (`earth_sites.m`): three sites (Nordics, West Texas, N. Virginia) with hourly time-of-use prices, a midday solar dip in Texas, PUE that rises in the afternoon heat, and grid carbon. Each step, Earth work goes to the site with the lowest price × PUE.
+
+With the coordinated policy the base averages 2.9 kW, of which most is the idle floor of a DGX B200 that is busy only 2–5 % of the time: the real-time load of 100 robots fits in one GPU. The relays stay parked because the Ka link to Earth has room for every explorer request; under `Hierarchical` they draw ~130 W on average (`figures/power_hierarchical_1relay.png`). Earth energy splits between the Nordics and West Texas as their prices cross during the day.
 
 ## Run
 
@@ -147,7 +163,7 @@ With the full five-relay constellation, hierarchical tactical service is 100 % u
 - **Relay constellation:** tactical reasoning for robots the base cannot reach. It does not need an Earth link, so it covers the contact gaps and the link congestion that make Earth-only service fail as the fleet grows.
 - **Earth:** deep reasoning with the larger model at the cheapest energy (Kimi K3 needs two DGX B200 nodes, ~29 kW, which a lunar base cannot power cheaply). Store and forward fits within the 1 h deadline whenever a contact arrives in time.
 
-**What it costs.** At the Starship price, lunar energy costs ~$570/kWh at the base and ~$210/kWh on the relays, against $0.06/kWh on Earth. Hence the rule: the Moon thinks only what latency, link capacity or contact gaps force it to.
+**What it costs.** At the Starship price, lunar energy costs ~$480/kWh at the base, ~$94/kWh on the relays and ~$570/kWh on a robot, against $0.04–0.10/kWh on Earth. Hence the rule: the Moon thinks only what latency, link capacity or contact gaps force it to.
 
 **What does not work.** Splitting one model by layers across the relays, as JARVIS does, fails for interactive reasoning. The relays are 4,000–22,000 km apart, which adds tens of milliseconds per hop to every token. The constellation instead runs a full replica on each relay and spreads requests across the relays in view.
 
@@ -175,6 +191,7 @@ With the full five-relay constellation, hierarchical tactical service is 100 % u
 - Decode is memory-bound (70 % of bandwidth).
 - For mixture-of-experts models, the experts touched per step grow with the batch.
 - Single-module nodes (robot, relay) serve one request at a time.
+- Power: 100 % of TDP in prefill, 65 % in decode; the smallest set of GPUs that holds the model.
 
 **Hardware** (datasheets):
 
@@ -195,7 +212,7 @@ With the full five-relay constellation, hierarchical tactical service is 100 % u
 - One terrain obstacle per site; explorers at a single representative location.
 - Continuous Earth ground coverage.
 - Tactical and deep tasks are independent of each other.
-- Queueing within one 5-minute step is ignored.
+- Queueing within one 5-minute step is modelled only through the batch size; arrivals are steady while robots work.
 - Hardware purchase and radiation mitigation are not costed.
 
 ## Sources

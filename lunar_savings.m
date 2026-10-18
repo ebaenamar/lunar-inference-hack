@@ -22,9 +22,9 @@ for s = 2:nS
     c = cfg; c.policy = pol{s}; c.baseHW = hwSel{s};
     r = lunar_dispatch(c, geo, C); R{s} = r;
     kWh(s,:) = r.tierKWh/cfg.days/cfg.nRobots;               % per robot-day
-    USD(s,:) = kWh(s,:).*P.vec;
+    USD(s,:) = kWh(s,:).*P.vec; USD(s,4) = r.earthUSD/cfg.days/cfg.nRobots;   % Earth at hourly site prices
     served(s,:) = [r.perOnTime r.tacOnTime r.deepOnTime r.deepOnTime*r.deepSuperior];
-    peakKW(s) = r.PmaxKW;
+    peakKW(s) = max(r.ts.baseKW);                              % measured peak load of the base
 end
 % All on the robot: a Thor per robot runs perception, tactical and a distilled deep model
 H = C.hw; M = C.mdl; act = mean(geo.sunlit); day = 86400*act;
@@ -54,10 +54,10 @@ detJ = sum(ts.boardJ) - sum(ts.tacBoard)*cc.small.energyJ;      % on-board detec
 dots = { ...   % timescale [s], tier, label, kWh per robot-day
   0.01, 1, 'on-board detector screens every frame', detJ/3.6e6/nd; ...
   1,    3, 'perception 7B (changed frames only)',   sum(ts.baseReqJ)/3.6e6/nd; ...
-  10,   4, 'tactical 30B on Earth (link up)',       sum(ts.tacEarth)*cc.tacEarth.energyJ*cfg.earthPUE/3.6e6/nd; ...
+  10,   4, 'tactical 30B on Earth (link up)',       sum(ts.tacEarth)*cc.tacEarth.energyJ*mean(ts.earthPUE)/3.6e6/nd; ...
   10,   2, 'tactical 30B on relays (gaps)',         sum(ts.relayJ)/3.6e6/nd; ...
   10,   1, 'tactical 3B on board (last resort)',    sum(ts.tacBoard)*cc.small.energyJ/3.6e6/nd; ...
-  3600, 4, 'deep reasoning, Kimi K3 (+ escalations)', sum(ts.deepEarth)*cc.deepEarth.energyJ*cfg.earthPUE/3.6e6/nd};
+  3600, 4, 'deep reasoning, Kimi K3 (+ escalations)', sum(ts.deepEarth)*cc.deepEarth.energyJ*mean(ts.earthPUE)/3.6e6/nd};
 ek = cell2mat(dots(:,4)); emax = max(ek);
 for k = 1:size(dots,1)
     t = dots{k,1}; y = dots{k,2}; e = dots{k,4};
@@ -99,7 +99,7 @@ title(ax,'Energy by tier (Earth joules are ~8,000x cheaper)');
 ax = nexttile(tl,6);
 moonKWh = sum(kWh(:,1:3),2);
 yyaxis(ax,'left'); bar(ax, moonKWh, 0.5, 'FaceColor',[0.5 0.5 0.55]); ylabel(ax,'kWh per robot-day spent on the Moon');
-yyaxis(ax,'right'); plot(ax, 1:nS, peakKW, 'o-','LineWidth',2,'MarkerFaceColor','w'); ylabel(ax,'lunar base peak, kW');
+yyaxis(ax,'right'); plot(ax, 1:nS, peakKW, 'o-','LineWidth',2,'MarkerFaceColor','w'); ylabel(ax,'lunar base peak load, kW');
 set(ax,'XTick',1:nS,'XTickLabel',S,'XTickLabelRotation',20); grid(ax,'on');
 title(ax, sprintf('Moon-side energy: coordinated %.0f%% below Moon-first', 100*(1 - moonKWh(5)/moonKWh(4))));
 end

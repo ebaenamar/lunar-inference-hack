@@ -1,7 +1,7 @@
 # Fast Moon, Slow Earth
 **An AI data center fleet across the Moon, its relay constellation and Earth**
 
-*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3.6x cheaper*
+*Lunar and Earth data centers as one fleet: real-time AI on the Moon, the rest on Earth, 3.2x cheaper*
 
 ## The problem
 By 2035, hundreds of robots will work at the lunar south pole, and they will need AI at very different speeds:
@@ -33,6 +33,7 @@ A MATLAB digital twin with:
 - **real orbits:** the NASA LCRNS Reference Constellation 3.1 states;
 - **real geometry:** terrain shadowing, the lunar day, link capacities and the light-time delay;
 - **datasheet hardware:** per-request latency and energy from memory-bandwidth and FLOPS models;
+- **dynamic power:** every 5 minutes, each data center draws what its work needs: batch size, busy and parked GPUs, cooling, transmitter, relay power budget, and the hourly price of three Earth sites;
 - **costs:** launch-based $/kWh for each lunar data center.
 
 It produces a 3D animation of the fleet, a robot's-eye video of each thought travelling to its data center, and a comparison of five strategies.
@@ -40,17 +41,17 @@ It produces a 3D animation of the fleet, a robot's-eye video of each thought tra
 ## Results
 100 robots, 40 % of them exploring craters, first relay only:
 
-| Strategy | Thinking cost per robot-day | Perception / tactical on time | Lunar base peak |
+| Strategy | Thinking cost per robot-day | Perception / tactical on time | Lunar base peak load |
 |---|---|---|---|
-| All on Earth | ~$0 | **0** / 88 % | 2 kW |
-| All on the Moon (Kimi K3 at the base) | ~$310 | 100 / **60** % | 31 kW |
-| Moon-first | ~$134 | 100 / 92 % | 16 kW |
-| **Fast Moon, Slow Earth** | **~$37** | **100 / 100 %** | **16 kW** |
+| All on Earth | ~$0 | **0** / 88 % | 1.0 kW |
+| All on the Moon (Kimi K3 at the base) | ~$293 | 100 / **60** % | 5.7 kW |
+| Moon-first | ~$137 | 100 / 92 % | 3.6 kW |
+| **Fast Moon, Slow Earth** | **~$42** | **100 / 100 %** | **3.1 kW** |
 
 The coordinated fleet:
-- is **3.6x cheaper** than Moon-first and **8x cheaper** than running everything on the Moon;
-- spends **76 % less energy on the Moon**;
-- needs a **lunar power plant half the size**, which saves about $150 M in launch;
+- is **3.2x cheaper** than Moon-first and **7x cheaper** than running everything on the Moon;
+- spends **72 % less energy on the Moon**;
+- draws a **peak of 3.1 kW instead of 5.7 kW**, so the lunar power plant is 46 % smaller and about $27 M cheaper to launch;
 - serves every robot on time, with 94–100 % of deep reasoning answered by the frontier model.
 
 ## How it fits Track 1
