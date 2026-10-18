@@ -79,6 +79,24 @@ linkMbps = zeros(1,N);
 linkMbps(relayPath) = cfg.relayMbps;
 linkMbps(earthVis') = cfg.dteMbps;
 
+% ---- Exploring robots: outside the base cell, inside a crater (higher terrain mask)
+re = (RM + 0)*[cosd(cfg.exploreLat)*cosd(cfg.exploreLon), cosd(cfg.exploreLat)*sind(cfg.exploreLon), sind(cfg.exploreLat)];
+xpl = rotz_rows(WS*t, repmat(re,N,1)); upE = xpl./vecnorm(xpl,2,2);
+expVis = false(nSat,N);
+for k = 1:nSat
+    d = squeeze(sat(k,:,:)) - xpl; dn = d./vecnorm(d,2,2);
+    expVis(k,:) = (asind(sum(upE.*dn,2)) > cfg.exploreMaskDeg)';
+end
+
+% ---- Relay eclipses by the Moon (relay compute runs on its solar bus)
+satSun = false(nSat,N);
+for k = 1:nSat
+    r = squeeze(sat(k,:,:)); p = sum(r.*sunDir,2); perp = vecnorm(r - p.*sunDir,2,2);
+    satSun(k,:) = ~((p < 0) & (perp < RM))';
+end
+geo.explorer = xpl; geo.expVis = expVis; geo.satSun = satSun;
+geo.expRelayPath = any(expVis & satEarth, 1);
+
 geo.t = t; geo.N = N; geo.RM = RM; geo.sat = sat; geo.nSat = nSat; geo.site = site;
 geo.siteInfo = S; geo.earthDir = earthDir; geo.sunDir = sunDir;
 geo.sunEl = sunEl'; geo.earthEl = earthEl'; geo.sunlit = sunlit'; geo.earthVis = earthVis';

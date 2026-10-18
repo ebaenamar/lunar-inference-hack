@@ -24,5 +24,13 @@ eco.powerLaunchUSD = (m.power + m.battery + m.radiators)*usdPerKg;
 eco.moonUSDperKWh = eco.powerLaunchUSD/max(lifeKWh,eps);
 eco.earthUSDperKWh = cfg.earthUSDperkWh;
 eco.moonUSDperDay  = eco.moonUSDperKWh*res.baseKWh/cfg.days;
+
+% Relay edge nodes: compute modules plus extra solar (deck: 5 t/MW) and radiators per relay
+relayKg = res.relayH.mass + 5*cfg.relayComputeW/1000 + cfg.radiatorKgPerKW*cfg.relayComputeW/1000;
+eco.relayMassKg  = relayKg*cfg.nRelays;
+eco.relayLaunchUSD = eco.relayMassKg*usdPerKg;
+relayLifeKWh = max(res.relayKWh,eps)/cfg.days*365.25*cfg.lifeYears;
+eco.relayUSDperKWh = eco.relayLaunchUSD/relayLifeKWh;
+eco.relayUSDperDay = eco.relayUSDperKWh*res.relayKWh/cfg.days;
 eco.earthUSDperDay = cfg.earthUSDperkWh*res.earthKWh/cfg.days;
 end

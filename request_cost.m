@@ -11,9 +11,9 @@ function r = request_cost(h, m)
 rc   = h.replica;
 memB = 0.85*rc*h.memGB*1e9;
 W    = m.total*m.bpp;                 % weight bytes
-r.fits = W + m.batch*m.kvGB*1e9 <= memB;
 B = m.batch;
-if h.replica == 1 && h.n == 1, B = 1; end   % on-board module serves its own robot
+if h.replica == 1, B = 1; end   % a single module (robot, relay or Thor cluster) serves one request at a time
+r.fits = W + B*m.kvGB*1e9 <= memB;
 
 prefill = 2*m.active*m.tin/(0.40*rc*h.tflops*1e12);
 if m.experts > 1

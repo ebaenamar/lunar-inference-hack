@@ -5,7 +5,7 @@ function cfg = lunar_config()
 % ---------------- Scenario ----------------
 cfg.site        = 'ConnectingRidge'; % 'Malapert' | 'ConnectingRidge' | 'FarSide'
 cfg.nRobots     = 100;               % robots operating around the base
-cfg.policy      = 'Adaptive';        % 'EarthBrain' | 'MoonBrain' | 'Adaptive'
+cfg.policy      = 'Hierarchical';    % 'EarthOnly' | 'BaseOnly' | 'Hierarchical'
 cfg.baseHW      = 'DGX-B200';        % 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
 cfg.power       = 'RidgeSolar';      % 'RidgeSolar' | 'Fission'
 cfg.launchPrice = 'Starship';        % 'Deck2035' | 'Starship' | 'CLPS'
@@ -24,6 +24,19 @@ cfg.scienceImgHz       = 0.1;    % science images per second
 cfg.scienceImgMB       = 4;      % [MB] per raw image
 cfg.triageKeep         = 0.05;   % fraction kept after on-Moon triage
 cfg.robotsWorkInDark   = false;  % solar robots hibernate when the site is dark
+
+% ---------------- Explorers and cognitive tiers ----------------
+cfg.fracExploring  = 0.4;    % robots outside the base cell (crater floors, distant sites)
+cfg.exploreLat     = -88.6;  % explorer location (crater near the base)
+cfg.exploreLon     = -60;
+cfg.exploreMaskDeg = 15;     % crater walls hide low relays
+cfg.tacticalPeriod = 120;    % [s] one tactical reasoning request per robot
+cfg.tacticalDeadline = 10;   % [s]
+cfg.tacticalMB     = 2;      % [MB] two images + text per tactical request
+cfg.deepPeriod     = 1800;   % [s] one deep-reasoning request per robot
+cfg.deepDeadline   = 3600;   % [s] store-and-forward allowed
+cfg.deepMB         = 0.1;    % [MB] text context per deep request
+cfg.relayComputeW  = 300;    % [W] of the relay bus given to compute (2 x Thor)
 
 % ---------------- Links (from the tutorial paper) ----------------
 cfg.cellRTT    = 0.02;   % [s] surface 5G cell round trip

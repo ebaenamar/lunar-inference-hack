@@ -10,7 +10,7 @@ cfg = lunar_config();
 cfg.site        = 'ConnectingRidge';   % 'Malapert' | 'ConnectingRidge' | 'FarSide'
 cfg.nRobots     = 100;
 cfg.nRelays     = 5;                   % 1 = first LCRNS relay only, 5 = full constellation
-cfg.policy      = 'Adaptive';          % 'EarthBrain' | 'MoonBrain' | 'Adaptive'
+cfg.policy      = 'Hierarchical';      % 'EarthOnly' | 'BaseOnly' | 'Hierarchical'
 cfg.baseHW      = 'DGX-B200';          % 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
 cfg.power       = 'RidgeSolar';        % 'RidgeSolar' | 'Fission'
 cfg.launchPrice = 'Starship';          % 'Deck2035' | 'Starship' | 'CLPS'
@@ -24,8 +24,9 @@ fprintf('LCRNS period %.2f h | per-relay visibility %.1f%% | relay path %.1f%% |
 
 res = lunar_dispatch(cfg, geo, C);
 eco = lunar_economics(cfg, res);
-fprintf('Perception on time %.1f%% | planning on time %.1f%% | science delivered %.1f%%\n', ...
-    100*res.perOnTime, 100*res.planOnTime, 100*res.sciDelivered);
+fprintf('On time: perception %.1f%% | tactical %.1f%% | deep %.1f%% (Kimi K3 share %.1f%%) | science %.1f%%\n', ...
+    100*res.perOnTime, 100*res.tacOnTime, 100*res.deepOnTime, 100*res.deepSuperior, 100*res.sciDelivered);
+fprintf('Tactical served by base %.0f%% | relays %.0f%% | Earth %.0f%% | missed %.0f%%\n', 100*res.tacShare);
 fprintf('Base %.1f kW avg | mass %.0f kg | launch $%.1f M (%s) | lunar energy $%.2f/kWh\n', ...
     res.baseAvgKW, eco.mass.total, eco.launchUSD/1e6, cfg.launchPrice, eco.moonUSDperKWh);
 

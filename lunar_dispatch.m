@@ -1,146 +1,185 @@
 function res = lunar_dispatch(cfg, geo, C)
-%LUNAR_DISPATCH Places every robot request on board, at the base or on Earth.
-%   Time-stepped over the geometry in geo. Each step: robot demand, link capacity
-%   to Earth (direct or through an LCRNS relay), base power state (solar ridge with
-%   battery, or fission), and the policy decide where each request runs and
-%   whether it meets its deadline.
+%LUNAR_DISPATCH Cognitive tiers: robot, relay constellation, lunar base, Earth.
+%   Each robot issues four kinds of work with growing cognitive load:
+%     reflex control (on board, always), perception (vision-language 7B, 1 s),
+%     tactical reasoning (30B-A3B with images, 10 s) and deep reasoning
+%     (Kimi K3 thinking, 1 h, store-and-forward allowed).
+%   Robots near the base reach it through the surface cell; explorers in craters
+%   reach only the LCRNS relays. Policies:
+%     'EarthOnly'    everything off board goes to Earth
+%     'BaseOnly'     everything off board goes to the lunar base
+%     'Hierarchical' perception at the base, tactical at the base or on the relay
+%                    constellation (each relay hosts its own replica), deep
+%                    reasoning on Earth when a contact exists, base fallback
+%                    only when the deadline is about to expire.
 
+M = C.mdl; dt = cfg.dt; N = geo.N;
 baseH  = pick_hw(C, cfg.baseHW);
-board  = C.hw.Thor;
-earthH = C.hw.EarthB200;
-M = C.mdl;
+board  = C.hw.Board; relayH = C.hw.RelayEdge; earthH = C.hw.EarthB200;
+pol = cfg.policy;
 
-% ---- Per-request costs
-cPerBase  = request_cost(baseH, M.VLM7B);
-cPerBoard = request_cost(board, M.VLM7B);
-cPerEarth = request_cost(earthH, M.VLM7B);
-cK3Base   = request_cost(baseH, M.K3);
-cDistBase = request_cost(baseH, M.Dist);
-cPlanEarth= request_cost(earthH, M.K3);
-if cK3Base.fits, cPlanBase = cK3Base; planBaseName = 'Kimi K3';
-else,            cPlanBase = cDistBase; planBaseName = 'distilled 30B-A3B';
-end
-cTriage = cPerBase;   % one vision-language pass per science image
+% ---- Per-request costs on each tier
+c.perBase   = request_cost(baseH,  M.VLM7B);
+c.perBoard  = request_cost(board,  M.VLM7B);
+c.perEarth  = request_cost(earthH, M.VLM7B);
+c.tacBase   = request_cost(baseH,  M.Tactical);
+c.tacRelay  = request_cost(relayH, M.Tactical);
+c.tacEarth  = request_cost(earthH, M.Tactical);
+c.tacBoard  = request_cost(board,  M.Tactical);
+c.deepEarth = request_cost(earthH, M.DeepK3);
+c.deepBase  = request_cost(baseH,  M.DeepK3);
+if ~c.deepBase.fits, c.deepBase = request_cost(baseH, M.DeepDist); deepBaseName = 'distilled 30B-A3B';
+else, deepBaseName = 'Kimi K3'; end
+c.triage = c.perBase;
+relayRTT = 0.12;    % surface <-> relay at ~17,000 km, both ways
+
+% ---- Deadlines met by each tier (latency only; capacity checked below)
+okPerBase  = cfg.cellRTT + c.perBase.latency  <= cfg.perceptionDeadline;
+okPerEarth = cfg.earthRTT + c.perEarth.latency <= cfg.perceptionDeadline;
+okTacBase  = cfg.cellRTT + c.tacBase.latency  <= cfg.tacticalDeadline;
+okTacRelay = relayRTT + c.tacRelay.latency    <= cfg.tacticalDeadline;
+okTacEarth = cfg.earthRTT + c.tacEarth.latency <= cfg.tacticalDeadline;
+deepCompute = cfg.earthRTT + c.deepEarth.latency;
 
 % ---- Power system
-houseKW = 2;                              % thermal, comms, avionics
-computeOn = ~strcmp(cfg.policy,'EarthBrain');   % EarthBrain flies no compute node
+houseKW = 2;
+computeOn = ~strcmp(pol,'EarthOnly');
 PmaxKW  = computeOn*baseH.Pmax/1000 + houseKW;
 PidleKW = computeOn*baseH.Pidle/1000 + houseKW;
-arrayKW = cfg.arrayMargin*PmaxKW;
-battKWh = cfg.batteryHours*PmaxKW;
-nFission = ceil(PmaxKW/cfg.fissionKWe);
-isFission = strcmp(cfg.power,'Fission');
+arrayKW = cfg.arrayMargin*PmaxKW; battKWh = cfg.batteryHours*PmaxKW;
+nFission = ceil(PmaxKW/cfg.fissionKWe); isFission = strcmp(cfg.power,'Fission');
+capSec = computeOn*(baseH.n/baseH.replica)*dt;
 
-N  = geo.N; dt = cfg.dt;
-capSec = computeOn*(baseH.n/baseH.replica)*dt;   % replica-seconds available per step
-
+% ---- State
+nBins = ceil(cfg.deepDeadline/dt);       % deep-reasoning queue, one bin per step of age
+q = zeros(1,nBins);
 z = zeros(1,N);
-ts = struct('perBase',z,'perBoard',z,'perEarth',z,'perMiss',z, ...
-            'planBase',z,'planEarth',z,'planMiss',z, ...
-            'sciRawMB',z,'sciSentMB',z,'backlogMB',z,'linkUse',z, ...
-            'baseKW',z,'genKW',z,'soc',z,'baseOn',false(1,N),'util',z, ...
-            'earthJ',z,'boardJ',z,'baseJ',z,'active',z);
-soc = battKWh; backlog = 0; maxBacklogMB = 2e6;   % 2 TB of on-surface storage
+ts = struct('perBase',z,'perMiss',z,'perEarth',z, ...
+    'tacBase',z,'tacRelay',z,'tacEarth',z,'tacMiss',z, ...
+    'deepEarth',z,'deepBase',z,'deepMiss',z,'deepQueue',z, ...
+    'relayLoad',zeros(geo.nSat,N),'sciRawMB',z,'sciSentMB',z,'backlogMB',z, ...
+    'baseKW',z,'genKW',z,'soc',z,'baseOn',false(1,N),'util',z, ...
+    'earthJ',z,'relayJ',z,'baseJ',z);
+soc = battKWh; backlog = 0;
 
 for i = 1:N
     active = geo.sunlit(i) || cfg.robotsWorkInDark;
-    Na = cfg.nRobots*active;
-    nPer  = Na*cfg.perceptionHz*dt;
-    nPlan = Na*dt/cfg.planPeriod;
-    nImg  = Na*cfg.scienceImgHz*dt;
-    rawMB = nImg*cfg.scienceImgMB;
-    linkMB = geo.linkMbps(i)*dt/8;
-    hasLink = geo.linkMbps(i) > 0;
+    Nin  = cfg.nRobots*(1-cfg.fracExploring)*active;
+    Nout = cfg.nRobots*cfg.fracExploring*active;
 
-    % Base availability
-    if isFission
-        genKW = nFission*cfg.fissionKWe; baseOn = true;
-    else
-        genKW = arrayKW*geo.sunlit(i);
-        baseOn = genKW > 0 || soc > PidleKW*dt/3600;
-    end
-
+    if isFission, genKW = nFission*cfg.fissionKWe; baseOn = computeOn;
+    else, genKW = arrayKW*geo.sunlit(i); baseOn = computeOn && (genKW > 0 || soc > PidleKW*dt/3600); end
     free = capSec*baseOn;
-    pB = 0; pO = 0; pE = 0; pM = 0; lB = 0; lE = 0; lM = 0; tri = 0;
 
-    % ---- Perception (deadline-critical)
-    switch cfg.policy
-        case 'EarthBrain'
-            okE = hasLink && (cfg.earthRTT + cPerEarth.latency <= cfg.perceptionDeadline);
-            pE = nPer*okE; pM = nPer - pE;
-        otherwise
-            okB = cfg.cellRTT + cPerBase.latency <= cfg.perceptionDeadline;
-            if okB && baseOn
-                pB = min(nPer, free/cPerBase.replicaSec); free = free - pB*cPerBase.replicaSec;
-            end
-            rest = nPer - pB;
-            okO = cPerBoard.latency <= cfg.perceptionDeadline;
-            pO = rest*okO; pM = rest - pO;
+    baseMB = geo.linkMbps(i)*dt/8;                          % base -> Earth
+    expMB  = cfg.relayMbps*dt/8*geo.expRelayPath(i);         % explorers -> relay -> Earth
+    relOK  = geo.expVis(:,i) & geo.satSun(:,i);              % relays that can compute for explorers
+    relSec = sum(relOK)*relayH.n*dt;                         % replica-seconds on the constellation
+
+    % ---------------- Perception (robots in the cell only)
+    nPer = Nin*cfg.perceptionHz*dt; pB = 0; pE = 0;
+    if strcmp(pol,'EarthOnly')
+        pE = nPer*(okPerEarth && baseMB > 0);
+    elseif okPerBase && baseOn
+        pB = min(nPer, free/c.perBase.replicaSec); free = free - pB*c.perBase.replicaSec;
+    end
+    pM = nPer - pB - pE;          % explorers run reflexes on board and do not request perception
+
+    % ---------------- Tactical reasoning
+    tIn = Nin*dt/cfg.tacticalPeriod; tOut = Nout*dt/cfg.tacticalPeriod;
+    tB = 0; tR = 0; tE = 0;
+    switch pol
+        case 'EarthOnly'
+            s1 = min(tIn,  okTacEarth*baseMB/cfg.tacticalMB); baseMB = baseMB - s1*cfg.tacticalMB;
+            s2 = min(tOut, okTacEarth*expMB/cfg.tacticalMB);  expMB  = expMB  - s2*cfg.tacticalMB;
+            tE = s1 + s2;
+        case 'BaseOnly'
+            if okTacBase && baseOn, tB = min(tIn, free/c.tacBase.replicaSec); free = free - tB*c.tacBase.replicaSec; end
+        case 'Hierarchical'
+            if okTacBase && baseOn, tB = min(tIn, free/c.tacBase.replicaSec); free = free - tB*c.tacBase.replicaSec; end
+            pend = (tIn - tB) + tOut;                         % rest goes to the relays
+            if okTacRelay, tR = min(pend, relSec/c.tacRelay.replicaSec); end
+            pend = pend - tR;
+            s2 = min(pend, okTacEarth*expMB/cfg.tacticalMB); expMB = expMB - s2*cfg.tacticalMB;
+            tE = s2;
+    end
+    tM = tIn + tOut - tB - tR - tE;
+    if any(relOK) && tR > 0
+        ts.relayLoad(relOK,i) = tR/sum(relOK);
     end
 
-    % ---- Planning
-    okEplan = hasLink && (cfg.earthRTT + cPlanEarth.latency <= cfg.planDeadline);
-    okBplan = baseOn && (cfg.cellRTT + cPlanBase.latency <= cfg.planDeadline);
-    switch cfg.policy
-        case 'EarthBrain'
-            lE = nPlan*okEplan; lM = nPlan - lE;
-        case 'MoonBrain'
-            if okBplan, lB = min(nPlan, free/cPlanBase.replicaSec); free = free - lB*cPlanBase.replicaSec; end
-            lM = nPlan - lB;
-        case 'Adaptive'
-            if okEplan
-                lE = nPlan;
-            elseif okBplan
-                lB = min(nPlan, free/cPlanBase.replicaSec); free = free - lB*cPlanBase.replicaSec;
-            end
-            lM = nPlan - lE - lB;
+    % ---------------- Deep reasoning: store-and-forward queue
+    q = [ (Nin+Nout)*dt/cfg.deepPeriod, q(1:end-1) ];       % age everything by one step
+    expired = 0; dE = 0; dB = 0;
+    if strcmp(pol,'BaseOnly')
+        if baseOn, dB = min(sum(q), free/c.deepBase.replicaSec); free = free - dB*c.deepBase.replicaSec;
+            q = take_oldest(q, dB); end
+    else
+        % send oldest first while the contact lasts
+        sendable = (baseMB + expMB)/cfg.deepMB;
+        latest = nBins - ceil(deepCompute/dt);              % older bins would miss the deadline
+        qq = q; qq(latest+1:end) = 0;
+        dE = min(sum(qq), sendable); q = take_oldest_upto(q, dE, latest);
+        baseMB = max(0, baseMB - dE*cfg.deepMB);
+        if strcmp(pol,'Hierarchical') && baseOn              % fallback just before expiry
+            last = q(end-1:end); nf = min(sum(last), free/c.deepBase.replicaSec);
+            free = free - nf*c.deepBase.replicaSec; dB = nf; q = take_oldest(q, nf);
+        end
     end
+    expired = q(end); q(end) = 0;
 
-    % ---- Science: triage on the Moon (Moon/Adaptive) then downlink
-    if ~strcmp(cfg.policy,'EarthBrain') && baseOn
-        tri = min(nImg, free/cTriage.replicaSec); free = free - tri*cTriage.replicaSec;
+    % ---------------- Science triage and downlink (robots in the cell)
+    nImg = Nin*cfg.scienceImgHz*dt; tri = 0;
+    if ~strcmp(pol,'EarthOnly') && baseOn
+        tri = min(nImg, free/c.triage.replicaSec); free = free - tri*c.triage.replicaSec;
     end
-    toSend  = tri*cfg.scienceImgMB*cfg.triageKeep + (nImg - tri)*cfg.scienceImgMB;
-    queue   = backlog + toSend;
-    sent    = min(queue, linkMB);
-    backlog = min(queue - sent, maxBacklogMB);
+    toSend = tri*cfg.scienceImgMB*cfg.triageKeep + (nImg - tri)*cfg.scienceImgMB;
+    queue = backlog + toSend; sent = min(queue, baseMB); backlog = min(queue - sent, 2e6);
 
-    % ---- Base power and battery
-    used = capSec*baseOn - free;
-    u = 0; if baseOn && capSec > 0, u = used/capSec; end
-    loadKW = baseOn*(PidleKW + (PmaxKW - PidleKW)*u);
-    if ~isFission
-        soc = min(battKWh, max(0, soc + (genKW - loadKW)*dt/3600));
-    end
+    % ---------------- Base power
+    used = capSec*baseOn - free; u = 0; if baseOn && capSec > 0, u = used/capSec; end
+    loadKW = (PidleKW - (~baseOn)*computeOn*baseH.Pidle/1000) + baseOn*(PmaxKW - PidleKW)*u;
+    if ~isFission, soc = min(battKWh, max(0, soc + (genKW - loadKW)*dt/3600)); end
 
-    ts.perBase(i)=pB; ts.perBoard(i)=pO; ts.perEarth(i)=pE; ts.perMiss(i)=pM;
-    ts.planBase(i)=lB; ts.planEarth(i)=lE; ts.planMiss(i)=lM;
-    ts.sciRawMB(i)=rawMB; ts.sciSentMB(i)=sent; ts.backlogMB(i)=backlog;
-    ts.linkUse(i)=sent/max(linkMB,eps)*hasLink;
+    ts.perBase(i)=pB; ts.perEarth(i)=pE; ts.perMiss(i)=pM;
+    ts.tacBase(i)=tB; ts.tacRelay(i)=tR; ts.tacEarth(i)=tE; ts.tacMiss(i)=tM;
+    ts.deepEarth(i)=dE; ts.deepBase(i)=dB; ts.deepMiss(i)=expired; ts.deepQueue(i)=sum(q);
+    ts.sciRawMB(i)=nImg*cfg.scienceImgMB; ts.sciSentMB(i)=sent; ts.backlogMB(i)=backlog;
     ts.baseKW(i)=loadKW; ts.genKW(i)=genKW; ts.soc(i)=soc/max(battKWh,eps);
-    ts.baseOn(i)=baseOn; ts.util(i)=u; ts.active(i)=Na;
-    ts.earthJ(i)=(lE*cPlanEarth.energyJ + pE*cPerEarth.energyJ)*cfg.earthPUE;
-    ts.boardJ(i)=pO*cPerBoard.energyJ;
+    ts.baseOn(i)=baseOn; ts.util(i)=u;
+    ts.earthJ(i)=(tE*c.tacEarth.energyJ + dE*c.deepEarth.energyJ + pE*c.perEarth.energyJ)*cfg.earthPUE;
+    ts.relayJ(i)=tR*c.tacRelay.energyJ;
     ts.baseJ(i)=loadKW*1e3*dt;
 end
 
-tot = @(x) sum(x);
-res.ts = ts;
-res.perOnTime  = (tot(ts.perBase)+tot(ts.perBoard)+tot(ts.perEarth))/max(tot(ts.perBase)+tot(ts.perBoard)+tot(ts.perEarth)+tot(ts.perMiss),eps);
-res.planOnTime = (tot(ts.planBase)+tot(ts.planEarth))/max(tot(ts.planBase)+tot(ts.planEarth)+tot(ts.planMiss),eps);
-res.sciDelivered = tot(ts.sciSentMB)/max(tot(ts.sciRawMB)*(1 - (~strcmp(cfg.policy,'EarthBrain'))*(1-cfg.triageKeep)),eps);
-res.sciDelivered = min(res.sciDelivered,1);
-res.baseKWh  = tot(ts.baseJ)/3.6e6;
-res.earthKWh = tot(ts.earthJ)/3.6e6;
-res.boardKWh = tot(ts.boardJ)/3.6e6;
-res.baseAvgKW = mean(ts.baseKW);
-res.baseUptime = mean(ts.baseOn);
-res.days = cfg.days;
-res.baseH = baseH; res.computeMass = computeOn*baseH.mass; res.PmaxKW = PmaxKW; res.arrayKW = arrayKW; res.battKWh = battKWh;
-res.nFission = nFission*isFission; res.planBaseName = planBaseName;
-res.cost = struct('perBase',cPerBase,'perBoard',cPerBoard,'perEarth',cPerEarth, ...
-                  'planBase',cPlanBase,'planEarth',cPlanEarth,'K3Base',cK3Base);
+S = @(x) sum(x);
+res.ts = ts; res.cost = c; res.deepBaseName = deepBaseName;
+res.perOnTime  = S(ts.perBase+ts.perEarth)/max(S(ts.perBase+ts.perEarth+ts.perMiss),eps);
+res.tacOnTime  = S(ts.tacBase+ts.tacRelay+ts.tacEarth)/max(S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacMiss),eps);
+res.deepOnTime = S(ts.deepEarth+ts.deepBase)/max(S(ts.deepEarth+ts.deepBase+ts.deepMiss),eps);
+res.deepSuperior = S(ts.deepEarth)/max(S(ts.deepEarth+ts.deepBase),eps);   % answered by Kimi K3
+res.tacShare = [S(ts.tacBase) S(ts.tacRelay) S(ts.tacEarth) S(ts.tacMiss)]/max(S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacMiss),eps);
+res.sciDelivered = min(1, S(ts.sciSentMB)/max(S(ts.sciRawMB)*(1-(~strcmp(pol,'EarthOnly'))*(1-cfg.triageKeep)),eps));
+res.baseKWh = S(ts.baseJ)/3.6e6; res.earthKWh = S(ts.earthJ)/3.6e6; res.relayKWh = S(ts.relayJ)/3.6e6;
+res.baseAvgKW = mean(ts.baseKW); res.baseUptime = mean(ts.baseOn);
+res.baseH = baseH; res.relayH = relayH; res.computeMass = computeOn*baseH.mass;
+res.PmaxKW = PmaxKW; res.arrayKW = arrayKW; res.battKWh = battKWh; res.nFission = nFission*isFission;
+% kept for the summary panel
+res.planBaseName = deepBaseName; res.planOnTime = res.deepOnTime;
+end
+
+function q = take_oldest(q, n)
+for b = numel(q):-1:1
+    if n <= 0, break; end
+    d = min(q(b), n); q(b) = q(b) - d; n = n - d;
+end
+end
+
+function q = take_oldest_upto(q, n, latest)
+for b = latest:-1:1
+    if n <= 0, break; end
+    d = min(q(b), n); q(b) = q(b) - d; n = n - d;
+end
 end
 
 function h = pick_hw(C, name)
