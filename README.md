@@ -86,6 +86,8 @@ Full pitch script and prepared answers: [PITCH.md](PITCH.md). Every number, with
 
 ![strategies](figures/strategies_slide.png)
 
+![reasoning by location](figures/reasoning_slide.png)
+
 ![fleet power](figures/fleet_power_frame.png)
 
 ---
@@ -159,9 +161,10 @@ Set `cfg.saveVideo = true` to write `lunar_inference.mp4`. The included render s
 
 ## Outputs
 
-- **Live fleet power video** (`lunar_fleet_power.mp4`, `lunar_fleet_video.m`), days 4–7:
+- **Live fleet video** (`lunar_fleet_power.mp4`, `lunar_fleet_video.m`), days 20–28 with the first relay (link gaps and the dark spell), 1920×1080, ~38 s:
   - the real relay orbits seen from the side, Earth's three data centers on top (the one in use lit up, with its price), and the links in use;
   - the base servers filling up, warm or parked, and the robots driving or idle with the shifts;
+  - **reasoning available right now** for a robot in the base cell and an explorer in a crater: which models it can reach (reflexes, 3B, 7B, 30B, Kimi K3), which data center answers, and Kimi K3's second opinions in flight, answered and fixing wrong decisions;
   - base power by component against putting everything on the Moon, Earth and relay power, and the energy bill so far.
 - **Numbers** (`NUMBERS.md`, `lunar_numbers.m`): strategies, the three layers, and the architecture sweep.
 - **3D animation:**

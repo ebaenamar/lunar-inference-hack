@@ -83,7 +83,7 @@ ts = struct('perBase',z,'perMiss',z,'perEarth',z, ...
     'baseKW',z,'genKW',z,'soc',z,'baseOn',false(1,N),'util',z, ...
     'earthJ',z,'relayJ',z,'baseJ',z,'tacBoard',z,'boardJ',z,'baseReqJ',z,'escal',z, ...
     'pCompKW',z,'pIdleKW',z,'pWorkKW',z,'pCoolKW',z,'pTxKW',z,'pHouseKW',z,'batchPer',z,'batchTacE',z,'jPer',z,'jTacE',z, ...
-    'escSent',z,'escK3',z,'escWait',z,'errFast',z,'errFix',z,'arrPer',z,'arrTac',z,'arrDeep',z,'shift',z,'hazard',z,'relayW',z,'relayLinkUse',z,'relayBudgetW',z,'earthUSD',z,'earthSite',z,'earthPrice',z,'earthPUE',z,'earthCO2g',z);
+    'escSent',z,'escQueue',z,'escK3',z,'escWait',z,'errFast',z,'errFix',z,'arrPer',z,'arrTac',z,'arrDeep',z,'shift',z,'hazard',z,'relayW',z,'relayLinkUse',z,'relayBudgetW',z,'earthUSD',z,'earthSite',z,'earthPrice',z,'earthPUE',z,'earthCO2g',z);
 soc = battKWh; backlog = 0;
 
 for i = 1:N
@@ -248,7 +248,7 @@ for i = 1:N
     ts.relayJ(i) = tR*c.tacRelay.energyJ + relayH.Pidle/relayH.n*max(0,onThor*dt - busyR);
     ts.relayW(i) = ts.relayJ(i)/dt; ts.relayLinkUse(i) = (expCap - expMB)/max(expCap,eps)*(expCap > 0); ts.relayBudgetW(i) = sum(max(0,relW(relOK)));
     ts.arrPer(i)=nPer+gate; ts.arrTac(i)=tIn+tOut+esc; ts.arrDeep(i)=q(1); ts.shift(i)=Wk.shift(i); ts.hazard(i)=Wk.trig(i)>1;
-    ts.escSent(i)=esc; ts.escK3(i)=escK3; ts.escWait(i)=escWait; ts.errFast(i)=errFast; ts.errFix(i)=fix;
+    ts.escSent(i)=esc; ts.escQueue(i)=sum(qE); ts.escK3(i)=escK3; ts.escWait(i)=escWait; ts.errFast(i)=errFast; ts.errFix(i)=fix;
     ts.tacBoard(i)=tL; ts.escal(i)=esc; ts.boardJ(i)=tL*c.small.energyJ + gate*cfg.detectorJ;
     ts.baseReqJ(i)=busyJ*(1+coolF);
     ts.pCompKW(i)=pComp; ts.pIdleKW(i)=baseOn*computeOn*idleW/1000; ts.pWorkKW(i)=baseOn*computeOn*busyJ/dt/1000; ts.pCoolKW(i)=pCool; ts.pTxKW(i)=pTx; ts.pHouseKW(i)=houseKW;

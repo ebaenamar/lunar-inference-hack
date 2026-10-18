@@ -2,8 +2,10 @@ function lunar_fleet_video(cfg, C, win, saveVideo)
 %LUNAR_FLEET_VIDEO Live view of the fleet's power, step by step (lunar_fleet_power.mp4).
 %   Left: the real LCRNS relay orbits seen from the side, Earth's data centers on
 %   top, the south-pole base with its servers and robots below, and the links in
-%   use. Right: base power by component, relay and Earth power, and the energy
-%   bill so far against putting everything on the Moon.
+%   use. Middle: the reasoning each robot can reach right now (in the base cell or
+%   in a crater), which data center provides it, and Kimi K3's second opinions.
+%   Right: base power by component, relay and Earth power, and the energy bill so
+%   far against putting everything on the Moon.
 
 if nargin < 3, win = [4 7]; end
 if nargin < 4, saveVideo = true; end
@@ -20,13 +22,14 @@ cB = bill(r); cM = bill(rm);
 idx = find(d >= win(1) & d <= win(2)); i0 = idx(1);
 cB = cB - cB(i0); cM = cM - cM(i0);
 nSrv = r.baseH.n; S = cfg.earthSites; nS = numel(S);
+Acc = reasoning_access(cfg, geo, r);
 
-fig = figure('Color','w','Position',[20 20 1600 900],'Visible','off');
+fig = figure('Color','w','Position',[0 0 1920 1080],'Visible','off');
 try, theme(fig,'light'); catch, end
 V = struct();
 
 % ---------- orbit view
-a1 = axes(fig,'Position',[0.02 0.36 0.46 0.60]); hold(a1,'on'); axis(a1,'equal','off');
+a1 = axes(fig,'Position',[0.005 0.38 0.35 0.60]); hold(a1,'on'); axis(a1,'equal','off');
 xlim(a1,[-24 24]); ylim(a1,[-6 31]);
 th = linspace(0,2*pi,100); RM = 1.7374;
 fill(a1, RM*cos(th), RM*sin(th), [0.80 0.80 0.80], 'EdgeColor',[0.5 0.5 0.5]);
@@ -52,7 +55,7 @@ V.state = text(a1, -24, 22.6, '', 'FontSize',9.5, 'VerticalAlignment','top');
 legend(a1, [V.dte V.rel1 V.expl], {'base direct to Earth','through a relay','explorer to relay'}, 'Location','southwest','FontSize',8);
 
 % ---------- south-pole surface
-a2 = axes(fig,'Position',[0.02 0.03 0.46 0.30]); hold(a2,'on'); axis(a2,'off');
+a2 = axes(fig,'Position',[0.01 0.02 0.34 0.34]); hold(a2,'on'); axis(a2,'off');
 xlim(a2,[0 100]); ylim(a2,[0 40]);
 V.ground = patch(a2,[0 100 100 0],[0 0 40 40],[0.93 0.93 0.90],'EdgeColor','none');
 text(a2, 2, 38, sprintf('Lunar base: %s', r.baseH.name), 'FontWeight','bold','FontSize',10);
@@ -77,7 +80,7 @@ V.dark = patch(a2,[0 100 100 0],[0 0 40 40],[0.2 0.2 0.25],'FaceAlpha',0,'EdgeCo
 
 % ---------- strip charts
 w = idx;
-a3 = axes(fig,'Position',[0.54 0.70 0.43 0.25]); hold(a3,'on');
+a3 = axes(fig,'Position',[0.68 0.71 0.30 0.25]); hold(a3,'on');
 h0 = plot(a3, nan, nan); delete(h0);
 ar = area(a3, d(w), [ts.pHouseKW(w); ts.pIdleKW(w); ts.pWorkKW(w); ts.pCoolKW(w)+ts.pTxKW(w)]', 'LineStyle','none');
 cols = [0.62 0.62 0.62; 0.72 0.86 0.72; 0.20 0.62 0.32; 0.30 0.70 0.90];
@@ -87,13 +90,13 @@ ylabel(a3,'kW'); grid(a3,'on'); ylim(a3,[0 1.1*max(rm.ts.baseKW(w))]);
 legend(a3, [ar(:)' hm], {'house','GPUs idle','GPUs working','cooling + radio','all on the Moon (2 x DGX)'}, 'Location','northwest','NumColumns',3,'FontSize',8,'AutoUpdate','off');
 title(a3, 'Lunar base power, last 24 h');
 V.cur3 = xline(a3, d(i0), 'k-');
-a4 = axes(fig,'Position',[0.54 0.39 0.43 0.24]); hold(a4,'on');
+a4 = axes(fig,'Position',[0.68 0.40 0.30 0.24]); hold(a4,'on');
 yyaxis(a4,'left'); plot(a4, d(w), ts.earthJ(w)/dt/1e3, '-', 'Color',[0.3 0.5 0.9], 'LineWidth',1); ylabel(a4,'Earth, kW');
 yyaxis(a4,'right'); plot(a4, d(w), ts.relayW(w), '-', 'Color',[0.6 0.4 0.9], 'LineWidth',1.2); ylabel(a4,'relays, W');
 ylim(a4,[0 max(50, 1.2*max(ts.relayW(w)))]); grid(a4,'on');
 title(a4, 'Earth data center and relay constellation, last 24 h');
 V.cur4 = xline(a4, d(i0), 'k-');
-a5 = axes(fig,'Position',[0.54 0.07 0.43 0.24]); hold(a5,'on');
+a5 = axes(fig,'Position',[0.68 0.06 0.30 0.25]); hold(a5,'on');
 V.bM = plot(a5, nan, nan, 'r-', 'LineWidth',2);
 V.bC = plot(a5, nan, nan, '-', 'Color',[0.2 0.62 0.32], 'LineWidth',2.5);
 xlim(a5, win); ylim(a5, [0 1.05*cM(idx(end))/1e3]); grid(a5,'on');
@@ -102,12 +105,14 @@ legend(a5, {'everything on the Moon','Fast Moon, Slow Earth'}, 'Location','north
 V.bT = text(a5, win(1)+0.03*diff(win), 0.55*cM(idx(end))/1e3, '', 'FontSize',11, 'FontWeight','bold');
 title(a5, sprintf('Energy bill of %d robots since day %g', cfg.nRobots, win(1)));
 
+V = reasoning_panel(fig, V);
 V.i0 = i0;
 if saveVideo
-    vw = VideoWriter('lunar_fleet_power.mp4','MPEG-4'); vw.FrameRate = 24; open(vw);
+    vw = VideoWriter('lunar_fleet_power.mp4','MPEG-4'); vw.FrameRate = 30; vw.Quality = 60; open(vw);
 end
 for i = idx(1):cfg.frameStep:idx(end)
     update_frame(V, i, r, rm, geo, cfg, X, Z, ex, d, cB, cM, a3, a4, nSrv, nIn, nOut);
+    update_reasoning(V, i, r, Acc);
     if saveVideo
         im = grab_frame(fig); hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);
         writeVideo(vw, im(1:hh,1:ww,:));
@@ -192,4 +197,75 @@ try
 catch
     im = print(fig, '-RGBImage', '-r0');
 end
+end
+
+function V = reasoning_panel(fig, V)
+% Reasoning ladder for a robot in the base cell and an explorer in a crater
+a6 = axes(fig,'Position',[0.36 0.02 0.30 0.96]); hold(a6,'on'); axis(a6,'off');
+xlim(a6,[0 10]); ylim(a6,[0 20]);
+text(a6, 5, 19.6, 'Reasoning available right now', 'HorizontalAlignment','center','FontWeight','bold','FontSize',15);
+text(a6, 5, 18.9, 'depends on where the robot is and on the links at that moment', 'HorizontalAlignment','center','FontSize',10,'Color',[0.35 0.35 0.35]);
+text(a6, 2.45, 18.1, 'Robot in the base cell', 'HorizontalAlignment','center','FontWeight','bold','FontSize',11.5);
+text(a6, 7.55, 18.1, 'Explorer in a crater', 'HorizontalAlignment','center','FontWeight','bold','FontSize',11.5);
+yl = [15.3 12.5 9.7 6.9 4.1];                                  % levels 5 (top) .. 1
+for c = 1:2
+    x0 = 0.15 + (c-1)*5.1;
+    for L = 1:5
+        y = yl(6-L);
+        V.cell(c,L) = rectangle(a6,'Position',[x0 y 4.6 2.4],'Curvature',0.12,'FaceColor',[0.94 0.94 0.94],'EdgeColor',[0.8 0.8 0.8]);
+        V.cellT(c,L) = text(a6, x0+2.3, y+1.55, '', 'HorizontalAlignment','center','FontWeight','bold','FontSize',11);
+        V.cellS(c,L) = text(a6, x0+2.3, y+0.65, '', 'HorizontalAlignment','center','FontSize',9.5);
+    end
+    V.brain(c) = text(a6, x0+2.3, 3.35, '', 'HorizontalAlignment','center','FontSize',10.5,'FontWeight','bold');
+end
+text(a6, 0.15, 2.45, 'Kimi K3 second opinions (Earth)', 'FontWeight','bold','FontSize',11);
+V.k3 = text(a6, 0.15, 1.35, '', 'FontSize',10.5, 'VerticalAlignment','middle');
+text(a6, 0.15, 0.25, 'colour = data center that answers:  orange robot   green lunar base   purple relay   blue Earth;  bold border = answering decisions now', ...
+    'FontSize',8.5,'Color',[0.35 0.35 0.35]);
+V.a6 = a6;
+end
+
+function update_reasoning(V, i, r, A)
+ts = r.ts;
+cO = [0.95 0.65 0.20]; cBs = [0.20 0.62 0.32]; cR = [0.60 0.40 0.90]; cE = [0.30 0.50 0.90]; off = [0.94 0.94 0.94];
+srcCol = {cBs, cR, cE}; srcTxt = {'lunar base, 0.8 s','relay Thor, 7.7 s','Earth, 2.6 s round trip'};
+names = {'Reflexes + detector','Small 3B','Vision 7B','Reasoning 30B','Kimi K3 2.8T'};
+for c = 1:2
+    if c == 1, av = A.base(:,i); src = A.baseSrc(:,i); else, av = A.expl(:,i); src = A.explSrc(:,i); end
+    use = 2; if av(4), use = 4; end
+    for L = 1:5
+        col = off; sub = ''; tc = [0.55 0.55 0.55];
+        if ~A.act(i)
+            sub = 'parked: ridge in shadow';
+        elseif av(L)
+            tc = 'w';
+            switch L
+                case 1, col = cO; sub = 'on board, 10 ms';
+                case 2, col = cO; sub = 'on board, 4.5 s';
+                case 3, col = cBs; sub = 'lunar base, 20 ms + batch';
+                case 4, col = srcCol{src(1)}; sub = srcTxt{src(1)};
+                case 5, col = cE; sub = 'Earth, store and forward, < 1 h';
+            end
+        else
+            switch L
+                case 3, sub = ternary(c == 2, 'out of the base cell', 'base off (battery empty)');
+                case 4, sub = ternary(c == 2, 'no relay link, no relay compute', 'no link and base off');
+                case 5, sub = 'no contact within the hour';
+            end
+        end
+        lw = 0.5; ec = [0.8 0.8 0.8];
+        if A.act(i) && L == use, lw = 3.5; ec = 'k'; end
+        set(V.cell(c,L), 'FaceColor', col, 'LineWidth', lw, 'EdgeColor', ec);
+        set(V.cellT(c,L), 'String', names{L}, 'Color', tc); set(V.cellS(c,L), 'String', sub, 'Color', tc);
+    end
+    if ~A.act(i), b = 'robots parked';
+    elseif av(4), b = 'decides with a 30B model within 10 s';
+    else, b = 'decides with its own 3B model only';
+    end
+    set(V.brain(c), 'String', b, 'Color', ternary(A.act(i) && ~av(4), [0.8 0.2 0.1], [0.15 0.15 0.15]));
+end
+w = V.i0:i;
+set(V.k3, 'String', sprintf(['in flight %3.0f   |   answered %5.0f   |   wrong decisions fixed %4.0f\n' ...
+    'robots act on the fast answer now; Kimi K3''s answer arrives later and corrects the plan'], ...
+    ts.escQueue(i), sum(ts.escK3(w)), sum(ts.errFix(w))));
 end
