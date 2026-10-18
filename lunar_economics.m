@@ -33,4 +33,10 @@ relayLifeKWh = max(res.relayKWh,eps)/cfg.days*365.25*cfg.lifeYears;
 eco.relayUSDperKWh = eco.relayLaunchUSD/relayLifeKWh;
 eco.relayUSDperDay = eco.relayUSDperKWh*res.relayKWh/cfg.days;
 eco.earthUSDperDay = cfg.earthUSDperkWh*res.earthKWh/cfg.days;
+
+% Marginal energy cost of the thinking itself, by tier (robot, relay, base, Earth)
+P = tier_prices(cfg, lunar_catalog());
+eco.tierPrice = P.vec;
+eco.tierUSDperDay = res.tierKWh.*P.vec/cfg.days;
+eco.thinkUSDperDay = sum(eco.tierUSDperDay);
 end

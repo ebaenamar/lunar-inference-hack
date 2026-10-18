@@ -10,7 +10,7 @@ cfg = lunar_config();
 cfg.site        = 'ConnectingRidge';   % 'Malapert' | 'ConnectingRidge' | 'FarSide'
 cfg.nRobots     = 100;
 cfg.nRelays     = 5;                   % 1 = first LCRNS relay only, 5 = full constellation
-cfg.policy      = 'Hierarchical';      % 'EarthOnly' | 'BaseOnly' | 'Hierarchical'
+cfg.policy      = 'Coordinated';       % 'EarthOnly' | 'BaseOnly' | 'Hierarchical' | 'Coordinated'
 cfg.baseHW      = 'DGX-B200';          % 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
 cfg.power       = 'RidgeSolar';        % 'RidgeSolar' | 'Fission'
 cfg.launchPrice = 'Starship';          % 'Deck2035' | 'Starship' | 'CLPS'

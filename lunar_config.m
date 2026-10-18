@@ -5,7 +5,7 @@ function cfg = lunar_config()
 % ---------------- Scenario ----------------
 cfg.site        = 'ConnectingRidge'; % 'Malapert' | 'ConnectingRidge' | 'FarSide'
 cfg.nRobots     = 100;               % robots operating around the base
-cfg.policy      = 'Hierarchical';    % 'EarthOnly' | 'BaseOnly' | 'Hierarchical'
+cfg.policy      = 'Coordinated';     % 'EarthOnly' | 'BaseOnly' | 'Hierarchical' | 'Coordinated'
 cfg.baseHW      = 'DGX-B200';        % 'Thor-cluster' | 'DGX-B200' | '2xDGX-B200' | 'GPU-2035x2'
 cfg.power       = 'RidgeSolar';      % 'RidgeSolar' | 'Fission'
 cfg.launchPrice = 'Starship';        % 'Deck2035' | 'Starship' | 'CLPS'
@@ -37,6 +37,10 @@ cfg.deepPeriod     = 1800;   % [s] one deep-reasoning request per robot
 cfg.deepDeadline   = 3600;   % [s] store-and-forward allowed
 cfg.deepMB         = 0.1;    % [MB] text context per deep request
 cfg.relayComputeW  = 300;    % [W] of the relay bus given to compute (2 x Thor)
+% Model cascade (Coordinated policy): small on-board model first, escalate when unsure
+cfg.perceptionTrigger = 0.2; % share of frames the on-board detector sends to the base model
+cfg.detectorJ      = 0.25;   % [J] on-board detector per frame (Orin NX, ~10 ms at 25 W)
+cfg.escalateDeep   = 0.1;    % share of tactical requests that escalate to Kimi K3 on Earth
 
 % ---------------- Links (from the tutorial paper) ----------------
 cfg.cellRTT    = 0.02;   % [s] surface 5G cell round trip

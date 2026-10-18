@@ -19,23 +19,29 @@ Which tier serves a request depends on the real relay orbits, terrain shadowing,
 
 ## Coordinated data centers: where the saving comes from
 
-`lunar_savings.m` compares, per robot-day, the same thinking done four ways. `lunar_robot_story.m` shows it from the robot's side: an in-cell robot and an explorer send each thought to the tier that fits its timescale, with running energy cost against the alternatives (`lunar_robot_story.mp4`).
+The design rule is that **models are combined across compute nodes, each working at its own timescale**:
+- **The Moon keeps only what is real time.** Reflexes run on the robot. An on-board detector screens every frame, and only frames that change go to the 7B model at the lunar base (1 s deadline).
+- **What can wait goes to Earth while the link has room.** That covers tactical reasoning (30B, 10 s) and deep reasoning (Kimi K3, 1 h, store and forward), where energy costs $0.06/kWh against ~$480/kWh on the Moon.
+- **The Moon takes over only when the link does not allow it.** In contact gaps or under congestion, the relays run the 30B model for explorers, the base runs it for robots in the cell, and the robot's 3B model is the last resort.
+- **The cascade escalates.** Hard requests go to Kimi K3 on Earth while the robot keeps acting on its own model.
 
-![savings](figures/savings_starship.png)
+This is the `Coordinated` policy. `lunar_savings.m` compares it with four other strategies using the same simulation (orbits, links, power). `lunar_robot_story.mp4` shows it from two robots' side.
 
-Energy cost per robot-day at the Starship launch price. Reflex control is excluded because every strategy runs it on board.
+![savings](figures/savings_1relay.png)
 
-| Strategy | $/robot-day | Service |
-|---|---|---|
-| All on the robot (Thor per robot) | ~$2,280 | Perception misses its 1 s deadline; deep reasoning uses a distilled model |
-| All on Earth | ~$0 | Perception fails (2.56 s round trip) |
-| All on the Moon (Kimi K3 at the base, 2 x DGX B200) | ~$380 | Explorers unserved; needs a 31 kW lunar plant |
-| **Coordinated** | **~$200** | **Everything served**; 16 kW plant |
+Per robot-day, Connecting Ridge, 100 robots (40 % exploring), first relay only, Starship launch price. Cost is marginal compute energy on each tier times that tier's $/kWh.
 
-Coordination uses about the same number of joules, slightly more, because the relay Thor modules are less efficient. Its saving comes from where the joules are spent:
-- **Deep reasoning moves to Earth**, at $0.06/kWh instead of ~$480/kWh on the Moon.
-- **The lunar base halves**, from 31 kW to 16 kW, which avoids ~$150 M of power-plant launch at the Starship price.
-- **The relays bring the explorers into service.**
+| Strategy | Thinking cost | Perception / tactical / deep by Kimi K3 | Lunar base peak |
+|---|---|---|---|
+| All on the robot (Thor each) | ~$1,450 | 0 / 100 / 0 % | — |
+| All on Earth | ~$0 | **0** / 88 / 94 % | 2 kW |
+| All on the Moon (K3 at the base) | ~$310 | 100 / **60** / 0 %* | 31 kW |
+| Moon-first (base, relays, then Earth) | ~$134 | 100 / 92 / 94 % | 16 kW |
+| **Coordinated** | **~$37** | **100 / 100 / 94 %** | 16 kW |
+
+\* At the base, Kimi K3 answers but explorers are unserved.
+
+The coordinated policy spends *more* joules than Moon-first, because Earth runs Kimi K3 on the escalations too. It spends 76 % fewer joules on the Moon, which makes it 3.6x cheaper while serving everything on time. The one cost it cannot remove is real-time perception at the base, which stays on the Moon by physics.
 
 ## Run
 
@@ -52,7 +58,7 @@ The scenario knobs are at the top of `run_lunar_hack.m`. All defaults (workload,
 | `site` | `Malapert` (Earth always in view), `ConnectingRidge` (Earth on the horizon), `FarSide` (no Earth, 14.8-day night) |
 | `nRobots`, `fracExploring` | Fleet size, and the share of robots outside the base cell (crater floors, 15° terrain mask) |
 | `nRelays` | LCRNS relays deployed: 1 is the first relay (2027), 5 is the full constellation |
-| `policy` | `EarthOnly`, `BaseOnly`, `Hierarchical` |
+| `policy` | `EarthOnly`, `BaseOnly`, `Hierarchical` (Moon-first), `Coordinated` (cheapest node that meets each deadline with the current link; default) |
 | `baseHW` | `Thor-cluster`, `DGX-B200`, `2xDGX-B200`, `GPU-2035x2` |
 | `power` | `RidgeSolar` (VSAT-class arrays and battery), `Fission` (40 kWe units) |
 | `launchPrice` | `Deck2035` ($1,200/kg), `Starship` (~$100,000/kg quote), `CLPS` (~$1M/kg) |

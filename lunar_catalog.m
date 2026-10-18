@@ -31,6 +31,7 @@ mdl.Dist   = mm('Distilled planner 30B-A3B (FP8)', 30e9, 3e9, 1.00, 8000, 1000, 
 mdl.Tactical = mm('Tactical reasoner 30B-A3B (FP8)', 30e9, 3e9, 1.00, 2000,  300, 0.10, 128,  8, 0.10,  8);
 mdl.DeepK3   = mm('Kimi K3 thinking',              2.8e12, 104e9, 0.53, 8000, 4000, 1.10, 896, 16, 0.05, 32);
 mdl.DeepDist = mm('Distilled reasoner 30B-A3B',      30e9,   3e9, 1.00, 8000, 4000, 0.40, 128,  8, 0.10, 32);
+mdl.Small3B  = mm('On-board small model 3B (FP8)',    3e9,   3e9, 1.00, 1000,  100, 0.02,   1,  1, 1.00,  1);
 C.mdl = mdl;
 end
 

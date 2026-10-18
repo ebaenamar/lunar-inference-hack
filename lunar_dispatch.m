@@ -31,6 +31,7 @@ c.deepBase  = request_cost(baseH,  M.DeepK3);
 if ~c.deepBase.fits, c.deepBase = request_cost(baseH, M.DeepDist); deepBaseName = 'distilled 30B-A3B';
 else, deepBaseName = 'Kimi K3'; end
 c.triage = c.perBase;
+c.small  = request_cost(board, M.Small3B);   % on-board first stage of the cascade
 relayRTT = 0.12;    % surface <-> relay at ~17,000 km, both ways
 
 % ---- Deadlines met by each tier (latency only; capacity checked below)
@@ -59,7 +60,7 @@ ts = struct('perBase',z,'perMiss',z,'perEarth',z, ...
     'deepEarth',z,'deepBase',z,'deepMiss',z,'deepQueue',z, ...
     'relayLoad',zeros(geo.nSat,N),'sciRawMB',z,'sciSentMB',z,'backlogMB',z, ...
     'baseKW',z,'genKW',z,'soc',z,'baseOn',false(1,N),'util',z, ...
-    'earthJ',z,'relayJ',z,'baseJ',z);
+    'earthJ',z,'relayJ',z,'baseJ',z,'tacBoard',z,'boardJ',z,'baseReqJ',z,'escal',z);
 soc = battKWh; backlog = 0;
 
 for i = 1:N
@@ -77,17 +78,28 @@ for i = 1:N
     relSec = sum(relOK)*relayH.n*dt;                         % replica-seconds on the constellation
 
     % ---------------- Perception (robots in the cell only)
-    nPer = Nin*cfg.perceptionHz*dt; pB = 0; pE = 0;
+    nPer = Nin*cfg.perceptionHz*dt; pB = 0; pE = 0; gate = 0;
+    if strcmp(pol,'Coordinated')
+        % an on-board detector screens every frame; only frames that change go to the base model
+        gate = nPer*(1 - cfg.perceptionTrigger); nPer = nPer*cfg.perceptionTrigger;
+    end
     if strcmp(pol,'EarthOnly')
         pE = nPer*(okPerEarth && baseMB > 0);
     elseif okPerBase && baseOn
         pB = min(nPer, free/c.perBase.replicaSec); free = free - pB*c.perBase.replicaSec;
     end
     pM = nPer - pB - pE;          % explorers run reflexes on board and do not request perception
+    pB = pB + gate;               % screened frames are answered on board within the deadline
 
     % ---------------- Tactical reasoning
     tIn = Nin*dt/cfg.tacticalPeriod; tOut = Nout*dt/cfg.tacticalPeriod;
-    tB = 0; tR = 0; tE = 0;
+    tB = 0; tR = 0; tE = 0; tL = 0; esc = 0;
+    if strcmp(pol,'Coordinated')
+        % hard requests escalate to Kimi K3 on Earth (store and forward); the robot keeps
+        % acting on its own small model meanwhile
+        esc = cfg.escalateDeep*(tIn + tOut);
+        tIn = (1-cfg.escalateDeep)*tIn; tOut = (1-cfg.escalateDeep)*tOut;
+    end
     switch pol
         case 'EarthOnly'
             s1 = min(tIn,  okTacEarth*baseMB/cfg.tacticalMB); baseMB = baseMB - s1*cfg.tacticalMB;
@@ -102,14 +114,28 @@ for i = 1:N
             pend = pend - tR;
             s2 = min(pend, okTacEarth*expMB/cfg.tacticalMB); expMB = expMB - s2*cfg.tacticalMB;
             tE = s2;
+        case 'Coordinated'
+            % cheapest node that meets the deadline: Earth while the link has room,
+            % then the relays (explorers) or the base (robots in the cell)
+            e1 = min(tIn,  okTacEarth*baseMB/cfg.tacticalMB); baseMB = baseMB - e1*cfg.tacticalMB;
+            e2 = min(tOut, okTacEarth*expMB/cfg.tacticalMB);  expMB  = expMB  - e2*cfg.tacticalMB;
+            tE = e1 + e2;
+            restIn = tIn - e1; restOut = tOut - e2;
+            if okTacRelay, tR = min(restOut, relSec/c.tacRelay.replicaSec); relSec = relSec - tR*c.tacRelay.replicaSec; end
+            if okTacBase && baseOn, tB = min(restIn, free/c.tacBase.replicaSec); free = free - tB*c.tacBase.replicaSec; end
+            r2 = restIn - tB;
+            if okTacRelay && r2 > 0, x = min(r2, relSec/c.tacRelay.replicaSec); tR = tR + x; end
+            % last resort: the on-board 3B model of the cascade
+            pendAll = tIn + tOut - tE - tR - tB;
+            if c.small.latency <= cfg.tacticalDeadline, tL = pendAll; end
     end
-    tM = tIn + tOut - tB - tR - tE;
+    tM = tIn + tOut - tB - tR - tE - tL;
     if any(relOK) && tR > 0
         ts.relayLoad(relOK,i) = tR/sum(relOK);
     end
 
     % ---------------- Deep reasoning: store-and-forward queue
-    q = [ (Nin+Nout)*dt/cfg.deepPeriod, q(1:end-1) ];       % age everything by one step
+    q = [ (Nin+Nout)*dt/cfg.deepPeriod + esc, q(1:end-1) ];  % age by one step; escalations join the queue
     expired = 0; dE = 0; dB = 0;
     if strcmp(pol,'BaseOnly')
         if baseOn, dB = min(sum(q), free/c.deepBase.replicaSec); free = free - dB*c.deepBase.replicaSec;
@@ -121,7 +147,7 @@ for i = 1:N
         qq = q; qq(latest+1:end) = 0;
         dE = min(sum(qq), sendable); q = take_oldest_upto(q, dE, latest);
         baseMB = max(0, baseMB - dE*cfg.deepMB);
-        if strcmp(pol,'Hierarchical') && baseOn              % fallback just before expiry
+        if any(strcmp(pol,{'Hierarchical','Coordinated'})) && baseOn   % fallback just before expiry
             last = q(end-1:end); nf = min(sum(last), free/c.deepBase.replicaSec);
             free = free - nf*c.deepBase.replicaSec; dB = nf; q = take_oldest(q, nf);
         end
@@ -149,16 +175,20 @@ for i = 1:N
     ts.baseOn(i)=baseOn; ts.util(i)=u;
     ts.earthJ(i)=(tE*c.tacEarth.energyJ + dE*c.deepEarth.energyJ + pE*c.perEarth.energyJ)*cfg.earthPUE;
     ts.relayJ(i)=tR*c.tacRelay.energyJ;
+    ts.tacBoard(i)=tL; ts.escal(i)=esc; ts.boardJ(i)=tL*c.small.energyJ + gate*cfg.detectorJ;
+    ts.baseReqJ(i)=(pB-gate)*c.perBase.energyJ + tB*c.tacBase.energyJ + dB*c.deepBase.energyJ + tri*c.triage.energyJ;
     ts.baseJ(i)=loadKW*1e3*dt;
 end
 
 S = @(x) sum(x);
 res.ts = ts; res.cost = c; res.deepBaseName = deepBaseName;
 res.perOnTime  = S(ts.perBase+ts.perEarth)/max(S(ts.perBase+ts.perEarth+ts.perMiss),eps);
-res.tacOnTime  = S(ts.tacBase+ts.tacRelay+ts.tacEarth)/max(S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacMiss),eps);
+res.tacOnTime  = S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacBoard)/max(S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacBoard+ts.tacMiss),eps);
 res.deepOnTime = S(ts.deepEarth+ts.deepBase)/max(S(ts.deepEarth+ts.deepBase+ts.deepMiss),eps);
 res.deepSuperior = S(ts.deepEarth)/max(S(ts.deepEarth+ts.deepBase),eps);   % answered by Kimi K3
 res.tacShare = [S(ts.tacBase) S(ts.tacRelay) S(ts.tacEarth) S(ts.tacMiss)]/max(S(ts.tacBase+ts.tacRelay+ts.tacEarth+ts.tacMiss),eps);
+res.tacShare5 = [S(ts.tacBoard) S(ts.tacRelay) S(ts.tacBase) S(ts.tacEarth) S(ts.tacMiss)]/max(S(ts.tacBoard+ts.tacRelay+ts.tacBase+ts.tacEarth+ts.tacMiss),eps);
+res.tierKWh = [S(ts.boardJ) S(ts.relayJ) S(ts.baseReqJ) S(ts.earthJ)]/3.6e6;   % marginal compute energy: robot relay base Earth
 res.sciDelivered = min(1, S(ts.sciSentMB)/max(S(ts.sciRawMB)*(1-(~strcmp(pol,'EarthOnly'))*(1-cfg.triageKeep)),eps));
 res.baseKWh = S(ts.baseJ)/3.6e6; res.earthKWh = S(ts.earthJ)/3.6e6; res.relayKWh = S(ts.relayJ)/3.6e6;
 res.baseAvgKW = mean(ts.baseKW); res.baseUptime = mean(ts.baseOn);

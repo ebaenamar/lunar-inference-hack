@@ -8,7 +8,14 @@ function lunar_robot_story(cfg, C, saveVideo)
 %   all on the Moon or all on the robot. Schematic, not to scale.
 
 if nargin < 3, saveVideo = false; end
-L = lunar_savings(cfg, C, false); c = L.cost; P = L.usdPerKWh;   % [robot relay base earth]
+L = lunar_savings(cfg, C, false);                 % plant sizes for the summary
+P = tier_prices(cfg, C).vec;                        % [robot relay base earth] $/kWh
+H = C.hw; M = C.mdl;
+c.perBase = request_cost(H.DGX_B200, M.VLM7B);    c.perThor = request_cost(H.Thor, M.VLM7B);
+c.tacBase = request_cost(H.DGX_B200, M.Tactical); c.tacEarth = request_cost(H.EarthB200, M.Tactical);
+c.tacThor = request_cost(H.Thor, M.Tactical);
+c.deepEarth = request_cost(H.EarthB200, M.DeepK3); c.deepMoonK3 = request_cost(H.DGX_B200x2, M.DeepK3);
+c.deepThor = request_cost(H.Thor, M.DeepDist);
 usd = @(J, tier) J/3.6e6*P(tier);
 fx = cfg.fracExploring;
 
@@ -24,8 +31,9 @@ for f = 1:nF
     t = tt(f);
     nPer = t*perHz; nTi = sum(ev.tacIn<=t); nTo = sum(ev.tacOut<=t);
     nD = sum(ev.deepIn<=t) + sum(ev.deepOut<=t);
-    cum(1,f) = nPer*usd(c.perBase.energyJ,3) + nTi*usd(c.tacBase.energyJ,3) + nTo*usd(c.tacRelay.energyJ,2) + nD*usd(c.deepEarth.energyJ*cfg.earthPUE,4); % energy at the meter
-    cum(2,f) = nPer*usd(c.perBase.energyJ,3) + nTi*usd(c.tacBase.energyJ,3) + nD*usd(c.deepMoonK3.energyJ,3);
+    cum(1,f) = nPer*(cfg.perceptionTrigger*usd(c.perBase.energyJ,3) + usd(cfg.detectorJ,1)) ...
+             + (nTi+nTo)*usd(c.tacEarth.energyJ*cfg.earthPUE,4) + nD*usd(c.deepEarth.energyJ*cfg.earthPUE,4);
+    cum(2,f) = nPer*usd(c.perBase.energyJ,3) + (nTi+nTo)*usd(c.tacBase.energyJ,3) + nD*usd(c.deepMoonK3.energyJ,3);
     cum(3,f) = nPer*usd(c.perThor.energyJ,1) + (nTi+nTo)*usd(c.tacThor.energyJ,1) + nD*usd(c.deepThor.energyJ,1);
 end
 
@@ -39,7 +47,7 @@ fill(ax,[52 60 72 80],[14 6 6 14],[0.18 0.18 0.2],'EdgeColor','none');          
 fill(ax,[8 14 20],[14 22 14],[0.45 0.45 0.47],'EdgeColor','none');                              % ridge
 th = linspace(0,pi,40); fill(ax,26+6*cos(th),14+5*sin(th),[0.75 0.75 0.78],'EdgeColor','none'); % base dome
 rectangle(ax,'Position',[30 14 6 4],'FaceColor',[0.2 0.62 0.32],'EdgeColor','none');
-text(ax,26,24,{'Lunar base','DGX B200','perception + tactical'},'Color','w','HorizontalAlignment','center','FontSize',9);
+text(ax,26,24,{'Lunar base','DGX B200','real-time perception'},'Color','w','HorizontalAlignment','center','FontSize',9);
 plot(ax,[14 14],[22 27],'w'); plot(ax,14,27.5,'o','MarkerFaceColor',[0.95 0.65 0.2],'MarkerEdgeColor','none');
 text(ax,14,30,'cell','Color',[0.8 0.8 0.8],'HorizontalAlignment','center','FontSize',8);
 rIn  = [38 16]; rOut = [66 8];
@@ -49,7 +57,7 @@ rel = [70 42];
 fill(ax,rel(1)+[-1.5 1.5 1.5 -1.5],rel(2)+[-1 -1 1 1],[0.6 0.4 0.9],'EdgeColor','w');
 fill(ax,rel(1)+[-6 -1.8 -1.8 -6],rel(2)+[-0.5 -0.5 0.5 0.5],[0.3 0.4 0.7],'EdgeColor','none');
 fill(ax,rel(1)+[1.8 6 6 1.8],rel(2)+[-0.5 -0.5 0.5 0.5],[0.3 0.4 0.7],'EdgeColor','none');
-text(ax,rel(1),rel(2)+4,{'LCRNS relay','edge node (2 x Thor)'},'Color','w','HorizontalAlignment','center','FontSize',9);
+text(ax,rel(1),rel(2)+4,{'LCRNS relay','routes to Earth; computes in gaps'},'Color','w','HorizontalAlignment','center','FontSize',9);
 ear = [92 54]; th2 = linspace(0,2*pi,60);
 fill(ax,ear(1)+5*cos(th2),ear(2)+5*sin(th2),[0.25 0.45 0.85],'EdgeColor','none');
 text(ax,ear(1)-1,ear(2)-8,{'Earth data center','Kimi K3, $0.07/kWh'},'Color','w','HorizontalAlignment','center','FontSize',9);
@@ -58,7 +66,7 @@ hClock = text(ax,2,57,'','Color','w','FontSize',12,'FontWeight','bold');
 hPer = plot(ax,[rIn(1) 33],[rIn(2) 17],'-','Color',[0.2 0.85 0.4],'LineWidth',2);
 pk = gobjects(0); pkData = zeros(0,7);   % [t0 dur x0 y0 x1 y1 kind]
 cols = {[0.2 0.85 0.4],[0.75 0.5 1.0],[0.35 0.6 1.0],[1 1 1]};
-legendTxt = {'every 1 s: perception -> base', 'every 2 min: tactical -> base / relay', ...
+legendTxt = {'every 1 s: detector on board; changed frames -> base (real time)', 'every 2 min: tactical -> Earth while the link has room', ...
              'every 30 min: deep reasoning -> Earth (store and forward)', 'answer returns'};
 for k = 1:4
     plot(ax, 3, 52-3*k, 'o','MarkerFaceColor',cols{k},'MarkerEdgeColor','none','MarkerSize',7);
@@ -74,7 +82,7 @@ h2 = plot(ax2,nan,nan,'-','Color',cc(2,:),'LineWidth',2);
 h3 = plot(ax2,nan,nan,'-','Color',cc(3,:),'LineWidth',2);
 xlim(ax2,[0 T/60]); ylim(ax2,[0 1.05*max(cum(:))]);
 xlabel(ax2,'mission minutes'); ylabel(ax2,'energy cost, $ (two robots)');
-legend(ax2,{'coordinated','all on the Moon (K3 at base)','all on the robot'},'TextColor','w','Color','none','Location','northwest');
+legend(ax2,{'coordinated (Moon real time, Earth the rest)','all on the Moon (K3 at base)','all on the robot'},'TextColor','w','Color','none','Location','northwest');
 title(ax2,sprintf('Energy cost of the same thinking (%s launch)', cfg.launchPrice),'Color','w');
 ax3 = axes(fig,'Position',[0.66 0.08 0.31 0.28]); axis(ax3,'off');
 hTxt = text(ax3,0,1,'','Color','w','FontSize',11,'VerticalAlignment','top','FontName','Menlo','Interpreter','none');
@@ -86,8 +94,8 @@ for f = 1:nF
     t = tt(f);
     % new packets
     newp = [];
-    if any(abs(ev.tacIn - t) < dtv/2),  newp = [newp; t 60  rIn  33 17 2]; end
-    if any(abs(ev.tacOut - t) < dtv/2), newp = [newp; t 80  rOut rel 2]; newp(end,5:6) = rel; end
+    if any(abs(ev.tacIn - t) < dtv/2),  newp = [newp; t 120 rIn  ear 2]; end
+    if any(abs(ev.tacOut - t) < dtv/2), newp = [newp; t 60  rOut rel 2]; newp(end,5:6) = rel; newp = [newp; t+60 80 rel ear 2]; end
     if any(abs(ev.deepIn - t) < dtv/2), newp = [newp; t 260 rIn ear 3]; end
     if any(abs(ev.deepOut - t) < dtv/2),newp = [newp; t 260 rOut ear 3]; end
     for k = 1:size(newp,1)
@@ -120,9 +128,9 @@ for f = 1:nF
         sprintf('coordinated        $%7.2f', cum(1,f)), ...
         sprintf('all on the Moon    $%7.2f  (%.1fx)', cum(2,f), cum(2,f)/max(cum(1,f),eps)), ...
         sprintf('all on the robot   $%7.2f  (%.1fx)', cum(3,f), cum(3,f)/max(cum(1,f),eps)), '', ...
-        sprintf('lunar power plant: %.0f kW vs %.0f kW', L.peakKW(4), L.peakKW(3)), ...
-        sprintf('launch saved: $%.0f M', (L.plantUSD(3)-L.plantUSD(4))/1e6), ...
-        sprintf('explorer served: yes (relay) vs no (all on Moon)')});
+        sprintf('lunar base peak: %.0f kW vs %.0f kW (K3 on the Moon)', L.peakKW(5), L.peakKW(3)), ...
+        sprintf('launch saved: $%.0f M', (L.plantUSD(3)-L.plantUSD(5))/1e6), ...
+        'real time stays on the Moon,', 'what can wait goes to Earth'});
     drawnow limitrate;
     if saveVideo
         im = grab_frame(fig); hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);

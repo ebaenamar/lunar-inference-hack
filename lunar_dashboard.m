@@ -22,9 +22,9 @@ ylim([0 1.1]); xlim([0 cfg.days]); grid on; ylabel('sunlit / battery');
 title(sprintf('Illumination %.0f%% | base uptime %.0f%% | base avg %.1f kW', 100*geo.illumFrac, 100*res.baseUptime, res.baseAvgKW));
 
 nexttile(tl,3);
-ar = area(td, [ts.tacBase; ts.tacRelay; ts.tacEarth; ts.tacMiss]'/cfg.dt*3600, 'EdgeColor','none');
-set(ar(1),'FaceColor',G); set(ar(2),'FaceColor',R); set(ar(3),'FaceColor',E); set(ar(4),'FaceColor',X);
-legend({'lunar base','relay constellation','Earth','missed'},'Location','eastoutside');
+ar = area(td, [ts.tacBoard; ts.tacBase; ts.tacRelay; ts.tacEarth; ts.tacMiss]'/cfg.dt*3600, 'EdgeColor','none');
+set(ar(1),'FaceColor',O); set(ar(2),'FaceColor',G); set(ar(3),'FaceColor',R); set(ar(4),'FaceColor',E); set(ar(5),'FaceColor',X);
+legend({'on board (3B, cascade)','lunar base','relay constellation','Earth','missed'},'Location','eastoutside');
 ylabel('req/h'); xlim([0 cfg.days]); grid on;
 title(sprintf('Tactical reasoning (30B-A3B + images, %d s): %.1f%% on time', cfg.tacticalDeadline, 100*res.tacOnTime));
 
@@ -58,6 +58,7 @@ L = {
      c.deepEarth.energyJ/1e3, c.deepEarth.latency, res.deepBaseName, c.deepBase.energyJ/1e3, c.deepBase.latency)
  sprintf('Energy cost  base $%.0f/kWh -> $%.0f/day | relays $%.0f/kWh -> $%.0f/day | Earth $%.2f/kWh -> $%.1f/day   (launch: %s)', ...
      eco.moonUSDperKWh, eco.moonUSDperDay, eco.relayUSDperKWh, eco.relayUSDperDay, eco.earthUSDperKWh, eco.earthUSDperDay, cfg.launchPrice)
+ sprintf('Thinking cost  robot $%.0f | relays $%.0f | base $%.0f | Earth $%.2f  per day  (marginal energy x tier $/kWh)', eco.tierUSDperDay)
  sprintf('Mass to Moon base %.0f kg (compute %.0f, power %.0f, battery %.0f, radiators %.0f) | relay edge nodes %.0f kg', ...
      eco.mass.total, eco.mass.compute, eco.mass.power, eco.mass.battery, eco.mass.radiators, eco.relayMassKg)
  };
