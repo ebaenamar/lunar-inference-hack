@@ -22,7 +22,7 @@ The scenario knobs are at the top of `run_lunar_hack.m`. The full defaults, incl
 | `power` | `RidgeSolar` (VSAT-class arrays and battery), `Fission` (40 kWe units) |
 | `launchPrice` | `Deck2035` ($1,200/kg), `Starship` (~$100,000/kg quote), `CLPS` (~$1M/kg) |
 
-Set `cfg.saveVideo = true` to write `lunar_inference.mp4` for the pitch.
+Set `cfg.saveVideo = true` to write `lunar_inference.mp4` for the pitch. A 24 s render of the default scenario (Connecting Ridge, 5 relays, 4 days) is included in the repo.
 
 ## Outputs
 

@@ -46,7 +46,7 @@ for k = 1:geo.nSat, hLab(k) = text(ax3,0,0,0,sprintf(' SV%d',k),'Color',cols(k,:
 hTitle = title(ax3,'','Color','w','FontSize',12);
 
 % Inset: close-up of the south-polar base
-axZ = axes(fig,'Position',[0.01 0.60 0.24 0.36],'Color','none'); hold(axZ,'on'); axis(axZ,'equal','off');
+axZ = axes(fig,'Position',[0.01 0.55 0.24 0.36],'Color','none'); hold(axZ,'on'); axis(axZ,'equal','off');
 surf(axZ, RM*X, RM*Y, RM*Z, alb, 'EdgeColor','none','FaceColor','interp', ...
      'FaceLighting','gouraud','AmbientStrength',0.10,'DiffuseStrength',1,'SpecularStrength',0);
 colormap(axZ, gray); caxis(axZ,[0 1]);
@@ -134,7 +134,11 @@ for i = idx
         geo.siteInfo.name, datestr(cfg.epoch + seconds(geo.t(i)),'dd-mmm HH:MM'), ...
         sunTxt, geo.linkMbps(i), numel(vis));
     drawnow limitrate;
-    if cfg.saveVideo, writeVideo(vw, getframe(fig)); end
+    if cfg.saveVideo
+        im = getframe(fig).cdata;              % H.264 needs dimensions that are multiples of 16
+        hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);
+        writeVideo(vw, im(1:hh,1:ww,:));
+    end
 end
 if cfg.saveVideo, close(vw); end
 end
