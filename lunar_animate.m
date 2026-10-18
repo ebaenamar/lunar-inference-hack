@@ -166,7 +166,7 @@ for i = idx
         sunTxt, geo.linkMbps(i), numel(vis));
     drawnow limitrate;
     if cfg.saveVideo
-        im = getframe(fig).cdata;              % H.264 needs dimensions that are multiples of 16
+        im = grab_frame(fig);              % H.264 needs dimensions that are multiples of 16
         hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);
         writeVideo(vw, im(1:hh,1:ww,:));
     end
@@ -184,4 +184,13 @@ function B = imgaussfilt_safe(A, s)
 k = exp(-((-3*s:3*s).^2)/(2*s^2)); k = k/sum(k);
 B = conv2(conv2(A, k, 'same'), k', 'same');
 B = B/max(abs(B(:)));
+end
+
+function im = grab_frame(fig)
+% getframe can fail on invisible figures in batch mode; print is robust
+try
+    im = getframe(fig).cdata;
+catch
+    im = print(fig, '-RGBImage', '-r0');
+end
 end

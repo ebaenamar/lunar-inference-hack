@@ -125,7 +125,7 @@ for f = 1:nF
         sprintf('explorer served: yes (relay) vs no (all on Moon)')});
     drawnow limitrate;
     if saveVideo
-        im = getframe(fig).cdata; hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);
+        im = grab_frame(fig); hh = 16*floor(size(im,1)/16); ww = 16*floor(size(im,2)/16);
         writeVideo(vw, im(1:hh,1:ww,:));
     end
 end
@@ -136,4 +136,13 @@ function robot(ax, p, col)
 rectangle(ax,'Position',[p(1)-2 p(2)-1 4 2],'FaceColor',col,'EdgeColor','none','Curvature',0.2);
 plot(ax,p(1)+[-1.5 1.5],p(2)-[1.3 1.3],'o','MarkerFaceColor',[0.2 0.2 0.2],'MarkerEdgeColor','w','MarkerSize',5);
 plot(ax,p(1)+[1 1.6],p(2)+[1 2.6],'w-','LineWidth',1);
+end
+
+function im = grab_frame(fig)
+% getframe can fail on invisible figures in batch mode; print is robust
+try
+    im = getframe(fig).cdata;
+catch
+    im = print(fig, '-RGBImage', '-r0');
+end
 end
