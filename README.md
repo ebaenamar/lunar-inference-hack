@@ -17,6 +17,26 @@ Which tier serves a request depends on the real relay orbits, terrain shadowing,
 
 ![video](lunar_inference.mp4)
 
+## Coordinated data centers: where the saving comes from
+
+`lunar_savings.m` compares, per robot-day, the same thinking done four ways. `lunar_robot_story.m` shows it from the robot's side: an in-cell robot and an explorer send each thought to the tier that fits its timescale, with running energy cost against the alternatives (`lunar_robot_story.mp4`).
+
+![savings](figures/savings_starship.png)
+
+Energy cost per robot-day at the Starship launch price. Reflex control is excluded because every strategy runs it on board.
+
+| Strategy | $/robot-day | Service |
+|---|---|---|
+| All on the robot (Thor per robot) | ~$2,280 | Perception misses its 1 s deadline; deep reasoning uses a distilled model |
+| All on Earth | ~$0 | Perception fails (2.56 s round trip) |
+| All on the Moon (Kimi K3 at the base, 2 x DGX B200) | ~$380 | Explorers unserved; needs a 31 kW lunar plant |
+| **Coordinated** | **~$200** | **Everything served**; 16 kW plant |
+
+Coordination uses about the same number of joules, slightly more, because the relay Thor modules are less efficient. Its saving comes from where the joules are spent:
+- **Deep reasoning moves to Earth**, at $0.06/kWh instead of ~$480/kWh on the Moon.
+- **The lunar base halves**, from 31 kW to 16 kW, which avoids ~$150 M of power-plant launch at the Starship price.
+- **The relays bring the explorers into service.**
+
 ## Run
 
 Open MATLAB in this folder and run:

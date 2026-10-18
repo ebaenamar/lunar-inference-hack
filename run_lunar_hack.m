@@ -33,3 +33,7 @@ fprintf('Base %.1f kW avg | mass %.0f kg | launch $%.1f M (%s) | lunar energy $%
 lunar_dashboard(cfg, geo, res, eco);
 if cfg.runSweep, lunar_sweep(cfg, geo, C); end
 if cfg.animate,  lunar_animate(cfg, geo, res); end
+
+% ---- Coordinated data centers: savings per robot-day and the robot's-eye story
+lunar_savings(cfg, C, true);
+lunar_robot_story(cfg, C, cfg.saveVideo);
